@@ -501,4 +501,246 @@ class C45DecisionTree:
         
         return node
     
+    def save_model(self, filepath: str) -> None:
+        model_data = {
+            'tree': self.tree_,
+            'feature_names': self.feature_names_,
+            'classes': self.classes_,
+            'n_features': self.n_features_,
+            'n_classes': self.n_classes_,
+            'feature_types': self.feature_types_,
+            'max_depth': self.max_depth,
+            'min_samples_split': self.min_samples_split,
+            'min_samples_leaf': self.min_samples_leaf,
+            'min_gain_ratio': self.min_gain_ratio,
+            'pruning': self.pruning,
+            'pruning_confidence': self.pruning_confidence
+        }
+        
+        with open(filepath, 'wb') as f:
+            pickle.dump(model_data, f)
+        
+        print(f"Model berhasil disimpan ke: {filepath}")
     
+    def load_model(self, filepath: str) -> 'C45DecisionTree':
+        with open(filepath, 'rb') as f:
+            model_data = pickle.load(f)
+        
+        self.tree_ = model_data['tree']
+        self.feature_names_ = model_data['feature_names']
+        self.classes_ = model_data['classes']
+        self.n_features_ = model_data['n_features']
+        self.n_classes_ = model_data['n_classes']
+        self.feature_types_ = model_data['feature_types']
+        self.max_depth = model_data['max_depth']
+        self.min_samples_split = model_data['min_samples_split']
+        self.min_samples_leaf = model_data['min_samples_leaf']
+        self.min_gain_ratio = model_data['min_gain_ratio']
+        self.pruning = model_data['pruning']
+        self.pruning_confidence = model_data['pruning_confidence']
+        
+        print(f"Model berhasil dimuat dari: {filepath}")
+        return self
+    
+    def get_depth(self) -> int:
+        return self.get_node_depth(self.tree_)
+    
+    def get_node_depth(self, node: Node) -> int:
+        if node is None or node.is_leaf:
+            return 0
+        
+        if node.threshold is not None:
+            # Continuous split
+            left_depth = self._get_node_depth(node.left) if node.left else 0
+            right_depth = self._get_node_depth(node.right) if node.right else 0
+            return 1 + max(left_depth, right_depth)
+        else:
+            # Categorical split
+            max_child_depth = 0
+            for child in node.children.values():
+                child_depth = self._get_node_depth(child)
+                max_child_depth = max(max_child_depth, child_depth)
+            return 1 + max_child_depth
+    
+    def get_n_leaves(self) -> int:
+        return self._count_leaves(self.tree_)
+    
+    def count_leaves(self, node: Node) -> int:
+        if node is None:
+            return 0
+        if node.is_leaf:
+            return 1
+        
+        count = 0
+        if node.threshold is not None:
+            count += self._count_leaves(node.left)
+            count += self._count_leaves(node.right)
+        else:
+            for child in node.children.values():
+                count += self._count_leaves(child)
+        
+        return count
+    
+    def visualize_tree(self, max_depth: Optional[int] = None, save_path: Optional[str] = None, figsize: Tuple[int, int] = (20, 12), dpi: int = 100) -> None:
+        if self.tree_ is None:
+            raise ValueError("Model belum di-fit. Panggil fit() terlebih dahulu.")
+        
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+        ax.axis('off')
+        
+        # Hitung posisi nodes
+        node_positions = {}
+        self.calculate_positions(self.tree_, 0, 0, 1, node_positions, max_depth)
+        
+        # Draw tree
+        self._draw_tree(ax, self.tree_, node_positions, max_depth)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, bbox_inches='tight', dpi=dpi)
+            print(f"Visualisasi tree disimpan ke: {save_path}")
+        
+        plt.show()
+    
+    def calculate_positions(self, node: Node, depth: int, left: float, right: float, positions: Dict, max_depth: Optional[int]) -> int:
+        if node is None or (max_depth is not None and depth > max_depth):
+            return 0
+        
+        if node.is_leaf or (max_depth is not None and depth == max_depth):
+            x = (left + right) / 2
+            y = -depth
+            positions[id(node)] = (x, y)
+            return 1
+        
+        # Recursive untuk children
+        if node.threshold is not None:
+            # Continuous split
+            left_leaves = self._calculate_positions(node.left, depth + 1, left, (left + right) / 2, positions, max_depth)
+            right_leaves = self._calculate_positions(node.right, depth + 1, (left + right) / 2, right, positions, max_depth)
+            total_leaves = left_leaves + right_leaves
+        else:
+            # Categorical split
+            n_children = len(node.children)
+            if n_children == 0:
+                x = (left + right) / 2
+                y = -depth
+                positions[id(node)] = (x, y)
+                return 1
+            
+            width = (right - left) / n_children
+            total_leaves = 0
+            
+            for i, child in enumerate(node.children.values()):
+                child_left = left + i * width
+                child_right = left + (i + 1) * width
+                child_leaves = self._calculate_positions(child, depth + 1, child_left, child_right, positions, max_depth)
+                total_leaves += child_leaves
+        
+        # Position untuk node ini
+        x = (left + right) / 2
+        y = -depth
+        positions[id(node)] = (x, y)
+        
+        return total_leaves
+    
+    def draw_tree(self, ax, node: Node, positions: Dict, max_depth: Optional[int], parent_pos: Optional[Tuple[float, float]] = None, edge_label: str = "") -> None:
+        if node is None or id(node) not in positions:
+            return
+        
+        current_depth = abs(int(positions[id(node)][1]))
+        if max_depth is not None and current_depth > max_depth:
+            return
+        
+        x, y = positions[id(node)]
+        
+        # Draw edge dari parent
+        if parent_pos is not None:
+            ax.plot([parent_pos[0], x], [parent_pos[1], y], 'k-', alpha=0.3, linewidth=1.5)
+            
+            # Edge label
+            if edge_label:
+                mid_x = (parent_pos[0] + x) / 2
+                mid_y = (parent_pos[1] + y) / 2
+                ax.text(mid_x, mid_y, edge_label, fontsize=8, ha='center',
+                       bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.3))
+        
+        # Node label
+        if node.is_leaf or (max_depth is not None and current_depth == max_depth):
+            # Leaf node
+            label = f"Class: {node.value}\nSamples: {node.samples}"
+            box_color = 'lightgreen'
+        else:
+            # Internal node
+            feature_name = self.feature_names_[node.feature] if self.feature_names_ else f"F{node.feature}"
+            if node.threshold is not None:
+                label = f"{feature_name}\n<= {node.threshold:.2f}\nSamples: {node.samples}"
+            else:
+                label = f"{feature_name}\nSamples: {node.samples}"
+            box_color = 'lightblue'
+        
+        # Draw node
+        bbox = dict(boxstyle='round,pad=0.5', facecolor=box_color, edgecolor='black', linewidth=1.5)
+        ax.text(x, y, label, fontsize=9, ha='center', va='center', bbox=bbox)
+        
+        # Draw children
+        if not node.is_leaf and (max_depth is None or current_depth < max_depth):
+            if node.threshold is not None:
+                # Continuous split
+                if node.left:
+                    self._draw_tree(ax, node.left, positions, max_depth, (x, y), "True")
+                if node.right:
+                    self._draw_tree(ax, node.right, positions, max_depth, (x, y), "False")
+            else:
+                # Categorical split
+                for value, child in node.children.items():
+                    self._draw_tree(ax, child, positions, max_depth, (x, y), str(value))
+    
+    def export_text(self, max_depth: Optional[int] = None) -> str:
+        if self.tree_ is None:
+            return "Model belum di-fit."
+        
+        lines = []
+        self.export_text_recursive(self.tree_, "", True, lines, 0, max_depth)
+        return "\n".join(lines)
+    
+    def export_text_recursive(self, node: Node, prefix: str, is_last: bool, lines: List[str], depth: int, max_depth: Optional[int]) -> None:
+        if node is None or (max_depth is not None and depth > max_depth):
+            return
+        
+        # Current node
+        connector = "└── " if is_last else "├── "
+        
+        if node.is_leaf or (max_depth is not None and depth == max_depth):
+            lines.append(f"{prefix}{connector}Class: {node.value} (samples: {node.samples})")
+        else:
+            feature_name = self.feature_names_[node.feature] if self.feature_names_ else f"Feature_{node.feature}"
+            if node.threshold is not None:
+                lines.append(f"{prefix}{connector}{feature_name} <= {node.threshold:.2f} (samples: {node.samples})")
+            else:
+                lines.append(f"{prefix}{connector}{feature_name} (samples: {node.samples})")
+        
+        # Children
+        if not node.is_leaf and (max_depth is None or depth < max_depth):
+            extension = "    " if is_last else "│   "
+            
+            if node.threshold is not None:
+                # Continuous split
+                if node.left:
+                    self._export_text_recursive(node.left, prefix + extension, False, lines, depth + 1, max_depth)
+                if node.right:
+                    self._export_text_recursive(node.right, prefix + extension, True, lines, depth + 1, max_depth)
+            else:
+                # Categorical split
+                children_list = list(node.children.items())
+                for i, (value, child) in enumerate(children_list):
+                    is_last_child = (i == len(children_list) - 1)
+                    lines.append(f"{prefix}{extension}{'└── ' if is_last_child else '├── '}[{value}]")
+                    self._export_text_recursive(
+                        child,
+                        prefix + extension + ("    " if is_last_child else "│   "),
+                        True,
+                        lines,
+                        depth + 1,
+                        max_depth
+                    )
