@@ -83,6 +83,37 @@ class C45DecisionTree:
         self.n_classes_ = None
         self.feature_types_ = {}  # 'continuous' or 'categorical'
         
+    def fit(self, X: Union[np.ndarray, pd.DataFrame], y: Union[np.ndarray, pd.Series]) -> 'C45DecisionTree':
+        """
+        Fit decision tree classifier.
+        """
+        if isinstance(X, pd.DataFrame):
+            self.feature_names_ = list(X.columns)
+            X = X.values
+        else:
+            self.feature_names_ = [f"Feature_{i}" for i in range(X.shape[1])]
+        if isinstance(y, pd.Series):
+            y = y.values
+        self.n_features_ = X.shape[1]
+        self.classes_ = np.unique(y)
+        self.n_classes_ = len(self.classes_)
+        # Detect feature types (continuous or categorical)
+        self.feature_types_ = {}
+        for i in range(self.n_features_):
+            feature_values = X[:, i]
+            non_missing = feature_values[~pd.isna(feature_values)]
+            if len(non_missing) == 0:
+                self.feature_types_[i] = 'categorical'
+                continue
+            try:
+                _ = non_missing.astype(float)
+                self.feature_types_[i] = 'continuous'
+            except:
+                self.feature_types_[i] = 'categorical'
+        available_features = list(range(self.n_features_))
+        self.tree_ = self.build_tree(X, y, available_features, depth=0)
+        return self
+    
     def entropy(self, y: np.ndarray, weights: Optional[np.ndarray] = None) -> float:
         """
         Menghitung entropy dari label target.
@@ -122,7 +153,7 @@ class C45DecisionTree:
             weights = np.ones(len(y))
         
         # Parent entropy
-        parent_entropy = self._entropy(y, weights)
+        parent_entropy = self.entropy(y, weights)
         
         feature_values = X[:, feature_idx]
         total_weight = np.sum(weights)
@@ -148,13 +179,13 @@ class C45DecisionTree:
             # Left branch
             if np.any(left_mask):
                 left_weight = np.sum(non_missing_weights[left_mask])
-                left_entropy = self._entropy(non_missing_y[left_mask], non_missing_weights[left_mask])
+                left_entropy = self.entropy(non_missing_y[left_mask], non_missing_weights[left_mask])
                 weighted_entropy += (left_weight / total_weight) * left_entropy
             
             # Right branch
             if np.any(right_mask):
                 right_weight = np.sum(non_missing_weights[right_mask])
-                right_entropy = self._entropy(non_missing_y[right_mask], non_missing_weights[right_mask])
+                right_entropy = self.entropy(non_missing_y[right_mask], non_missing_weights[right_mask])
                 weighted_entropy += (right_weight / total_weight) * right_entropy
         
         # Categorical feature
@@ -169,7 +200,7 @@ class C45DecisionTree:
                 value_mask = (non_missing_values == value)
                 if np.any(value_mask):
                     value_weight = np.sum(non_missing_weights[value_mask])
-                    value_entropy = self._entropy(non_missing_y[value_mask], non_missing_weights[value_mask])
+                    value_entropy = self.entropy(non_missing_y[value_mask], non_missing_weights[value_mask])
                     weighted_entropy += (value_weight / total_weight) * value_entropy
         
         return parent_entropy - weighted_entropy
@@ -284,7 +315,7 @@ class C45DecisionTree:
                 for i in range(len(sorted_values) - 1):
                     threshold = (sorted_values[i] + sorted_values[i + 1]) / 2
                     
-                    gain_ratio = self._gain_ratio(X, y, feature_idx, threshold, weights)
+                    gain_ratio = self.gain_ratio(X, y, feature_idx, threshold, weights)
                     
                     if gain_ratio > best_gain_ratio:
                         best_gain_ratio = gain_ratio
@@ -293,7 +324,7 @@ class C45DecisionTree:
             
             else:
                 # Categorical feature
-                gain_ratio = self._gain_ratio(X, y, feature_idx, None, weights)
+                gain_ratio = self.gain_ratio(X, y, feature_idx, None, weights)
                 
                 if gain_ratio > best_gain_ratio:
                     best_gain_ratio = gain_ratio
@@ -344,7 +375,7 @@ class C45DecisionTree:
         node = Node()
         node.samples = n_samples
         node.depth = depth
-        node.class_distribution = self._get_class_distribution(y, weights)
+        node.class_distribution = self.get_class_distribution(y, weights)
         
         # Stopping criteria
         # 1. Semua instances termasuk kelas yang sama
@@ -356,24 +387,24 @@ class C45DecisionTree:
         # 2. Tidak ada features yang tersisa atau max depth tercapai
         if len(available_features) == 0 or (self.max_depth is not None and depth >= self.max_depth):
             node.is_leaf = True
-            node.value = self._majority_class(y, weights)
+            node.value = self.majority_class(y, weights)
             return node
         
         # 3. Jumlah samples terlalu kecil untuk split
         if n_samples < self.min_samples_split:
             node.is_leaf = True
-            node.value = self._majority_class(y, weights)
+            node.value = self.majority_class(y, weights)
             return node
         
         # Find best split
-        best_feature, best_threshold, best_gain_ratio = self._find_best_split(
+        best_feature, best_threshold, best_gain_ratio = self.find_best_split(
             X, y, available_features, weights
         )
         
         # 4. Tidak ada split yang memberikan gain yang cukup
         if best_feature is None or best_gain_ratio < self.min_gain_ratio:
             node.is_leaf = True
-            node.value = self._majority_class(y, weights)
+            node.value = self.majority_class(y, weights)
             return node
         
         # Set node properties
@@ -417,7 +448,7 @@ class C45DecisionTree:
                 
                 # Build left subtree
                 if np.any(left_mask) and np.sum(left_weights[left_mask]) >= self.min_samples_leaf:
-                    node.left = self._build_tree(
+                    node.left = self.build_tree(
                         X[left_mask],
                         y[left_mask],
                         available_features,
@@ -427,14 +458,14 @@ class C45DecisionTree:
                 else:
                     # Create leaf
                     leaf = Node(is_leaf=True)
-                    leaf.value = self._majority_class(y, weights)
+                    leaf.value = self.majority_class(y, weights)
                     leaf.samples = 0
                     leaf.depth = depth + 1
                     node.left = leaf
                 
                 # Build right subtree
                 if np.any(right_mask) and np.sum(right_weights[right_mask]) >= self.min_samples_leaf:
-                    node.right = self._build_tree(
+                    node.right = self.build_tree(
                         X[right_mask],
                         y[right_mask],
                         available_features,
@@ -444,7 +475,7 @@ class C45DecisionTree:
                 else:
                     # Create leaf
                     leaf = Node(is_leaf=True)
-                    leaf.value = self._majority_class(y, weights)
+                    leaf.value = self.majority_class(y, weights)
                     leaf.samples = 0
                     leaf.depth = depth + 1
                     node.right = leaf
@@ -483,7 +514,7 @@ class C45DecisionTree:
                         value_weights[missing_mask] *= value_proportions[value]
                     
                     if np.any(value_mask) and np.sum(value_weights[value_mask]) >= self.min_samples_leaf:
-                        child = self._build_tree(
+                        child = self.build_tree(
                             X[value_mask],
                             y[value_mask],
                             new_available_features,
@@ -494,7 +525,7 @@ class C45DecisionTree:
                     else:
                         # Create leaf
                         leaf = Node(is_leaf=True)
-                        leaf.value = self._majority_class(y[value_mask], value_weights[value_mask]) if np.any(value_mask) else self._majority_class(y, weights)
+                        leaf.value = self.majority_class(y[value_mask], value_weights[value_mask]) if np.any(value_mask) else self.majority_class(y, weights)
                         leaf.samples = np.sum(value_mask)
                         leaf.depth = depth + 1
                         node.children[value] = leaf
@@ -551,19 +582,19 @@ class C45DecisionTree:
         
         if node.threshold is not None:
             # Continuous split
-            left_depth = self._get_node_depth(node.left) if node.left else 0
-            right_depth = self._get_node_depth(node.right) if node.right else 0
+            left_depth = self.get_node_depth(node.left) if node.left else 0
+            right_depth = self.get_node_depth(node.right) if node.right else 0
             return 1 + max(left_depth, right_depth)
         else:
             # Categorical split
             max_child_depth = 0
             for child in node.children.values():
-                child_depth = self._get_node_depth(child)
+                child_depth = self.get_node_depth(child)
                 max_child_depth = max(max_child_depth, child_depth)
             return 1 + max_child_depth
     
     def get_n_leaves(self) -> int:
-        return self._count_leaves(self.tree_)
+        return self.count_leaves(self.tree_)
     
     def count_leaves(self, node: Node) -> int:
         if node is None:
@@ -573,11 +604,11 @@ class C45DecisionTree:
         
         count = 0
         if node.threshold is not None:
-            count += self._count_leaves(node.left)
-            count += self._count_leaves(node.right)
+            count += self.count_leaves(node.left)
+            count += self.count_leaves(node.right)
         else:
             for child in node.children.values():
-                count += self._count_leaves(child)
+                count += self.count_leaves(child)
         
         return count
     
@@ -593,7 +624,7 @@ class C45DecisionTree:
         self.calculate_positions(self.tree_, 0, 0, 1, node_positions, max_depth)
         
         # Draw tree
-        self._draw_tree(ax, self.tree_, node_positions, max_depth)
+        self.draw_tree(ax, self.tree_, node_positions, max_depth)
         
         plt.tight_layout()
         
@@ -616,8 +647,8 @@ class C45DecisionTree:
         # Recursive untuk children
         if node.threshold is not None:
             # Continuous split
-            left_leaves = self._calculate_positions(node.left, depth + 1, left, (left + right) / 2, positions, max_depth)
-            right_leaves = self._calculate_positions(node.right, depth + 1, (left + right) / 2, right, positions, max_depth)
+            left_leaves = self.calculate_positions(node.left, depth + 1, left, (left + right) / 2, positions, max_depth)
+            right_leaves = self.calculate_positions(node.right, depth + 1, (left + right) / 2, right, positions, max_depth)
             total_leaves = left_leaves + right_leaves
         else:
             # Categorical split
@@ -634,7 +665,7 @@ class C45DecisionTree:
             for i, child in enumerate(node.children.values()):
                 child_left = left + i * width
                 child_right = left + (i + 1) * width
-                child_leaves = self._calculate_positions(child, depth + 1, child_left, child_right, positions, max_depth)
+                child_leaves = self.calculate_positions(child, depth + 1, child_left, child_right, positions, max_depth)
                 total_leaves += child_leaves
         
         # Position untuk node ini
@@ -688,13 +719,13 @@ class C45DecisionTree:
             if node.threshold is not None:
                 # Continuous split
                 if node.left:
-                    self._draw_tree(ax, node.left, positions, max_depth, (x, y), "True")
+                    self.draw_tree(ax, node.left, positions, max_depth, (x, y), "True")
                 if node.right:
-                    self._draw_tree(ax, node.right, positions, max_depth, (x, y), "False")
+                    self.draw_tree(ax, node.right, positions, max_depth, (x, y), "False")
             else:
                 # Categorical split
                 for value, child in node.children.items():
-                    self._draw_tree(ax, child, positions, max_depth, (x, y), str(value))
+                    self.draw_tree(ax, child, positions, max_depth, (x, y), str(value))
     
     def export_text(self, max_depth: Optional[int] = None) -> str:
         if self.tree_ is None:
@@ -727,16 +758,16 @@ class C45DecisionTree:
             if node.threshold is not None:
                 # Continuous split
                 if node.left:
-                    self._export_text_recursive(node.left, prefix + extension, False, lines, depth + 1, max_depth)
+                    self.export_text_recursive(node.left, prefix + extension, False, lines, depth + 1, max_depth)
                 if node.right:
-                    self._export_text_recursive(node.right, prefix + extension, True, lines, depth + 1, max_depth)
+                    self.export_text_recursive(node.right, prefix + extension, True, lines, depth + 1, max_depth)
             else:
                 # Categorical split
                 children_list = list(node.children.items())
                 for i, (value, child) in enumerate(children_list):
                     is_last_child = (i == len(children_list) - 1)
                     lines.append(f"{prefix}{extension}{'└── ' if is_last_child else '├── '}[{value}]")
-                    self._export_text_recursive(
+                    self.export_text_recursive(
                         child,
                         prefix + extension + ("    " if is_last_child else "│   "),
                         True,
@@ -744,3 +775,30 @@ class C45DecisionTree:
                         depth + 1,
                         max_depth
                     )
+    
+    def predict(self, X: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
+        """
+        Predict class labels for samples in X.
+        """
+        if isinstance(X, pd.DataFrame):
+            X = X.values
+        return np.array([self._predict_single(x, self.tree_) for x in X])
+
+    def _predict_single(self, x, node: Node):
+        while not node.is_leaf:
+            feature_value = x[node.feature]
+            if node.threshold is not None:
+                # Continuous feature
+                if pd.isna(feature_value):
+                    # If missing, return majority class at node
+                    return node.value
+                if feature_value <= node.threshold:
+                    node = node.left
+                else:
+                    node = node.right
+            else:
+                # Categorical feature
+                if pd.isna(feature_value) or feature_value not in node.children:
+                    return node.value
+                node = node.children.get(feature_value, node)
+        return node.value
