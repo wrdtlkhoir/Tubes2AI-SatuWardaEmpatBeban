@@ -39,6 +39,24 @@ class LogRegression():
     def calculate_probability(self, sigma):
         return 1 / (1 + pow(math.e, -sigma))
     
+    # Batch Logistic Regression
+    def iterate_batch(self, epochs=10):
+        for epoch in range(epochs):
+            grad = np.zeros(len(self.weight))
+
+            for x, y in self.data: 
+                x_with_bias = [self.bias] + x
+
+                sigma = self.calculate_sigma(x)
+                y_pred = self.calculate_probability(sigma)
+
+                for i in range (len(self.weight)):
+                    grad[i] += (y - y_pred) * x_with_bias[i]
+
+            for i in range(len(self.weight)):
+                self.weight[i] += self.learning_rate * grad[i]
+
+    # Stochastic Gradient Ascent
     # for all set of data randomized the order and iterate by that order until it gets the value 
     def iterate(self, epochs=10):
         for epoch in range(epoch): 
