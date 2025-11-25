@@ -71,7 +71,7 @@ class LogRegression():
                 for i in range(len(self.weight)):
                     self.weight[i] += self.learning_rate * (y - y_pred) * x_with_bias[i]
 
-    #3. Mini batch gradient ascent
+    # 3. Mini batch gradient ascent
     def iterate_mini_batch(self, batch_size=4, epochs=10):
         for epoch in range(epoch): 
             random.shuffle(self.data)
@@ -94,6 +94,26 @@ class LogRegression():
                 # Update weight per batch
                 for j in range(self.weight):
                     self.weight[j] += self.learning_rate * grad[j]
+
+    # 4. Log reg with momentum
+    def iterate_momentum(self, epochs=10, beta=0.9):
+        v = np.zeros(len(self.weight))
+
+        for _ in range(epochs):
+            random.shuffle(self.data)
+
+            for x, y in self.data:
+                x_with_bias = [self.bias] + x
+                sigma = self.calculate_sigma(x)
+                y_pred = self.calculate_probability(sigma)   
+
+                grad = np.zeros(len(self.weight))
+                for j in range(len(self.weight)):
+                    grad[j] = (y - y_pred) * x_with_bias[j]
+
+            v = beta * v + self.learning_rate * grad
+
+            self.weight += v
 
     def predict(self, x):
         sigma = self.calculate_sigma(x)
