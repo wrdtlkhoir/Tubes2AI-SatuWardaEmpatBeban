@@ -1,2 +1,11 @@
+# Ignore Python compiled files
 __pycache__/
-**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+# Ignore model and output files
+*.pkl
+*.png
+*.csv
