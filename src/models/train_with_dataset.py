@@ -9,7 +9,7 @@ import seaborn as sns
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from decision_tree_leaarning import C45DecisionTree
+from models.decision_tree_learning import C45DecisionTree
 
 
 def load_and_explore_data():
