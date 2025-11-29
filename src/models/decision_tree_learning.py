@@ -46,7 +46,8 @@ class C45DecisionTree:
             if len(x_clean) == 0:
                 return False
             x_clean.astype(float)
-            return len(np.unique(x_clean)) > 10
+            unique_count = len(np.unique(x_clean))
+            return unique_count > 2 and (unique_count > len(x_clean) * 0.3 or unique_count > 5)
         except:
             return False
     
@@ -130,10 +131,21 @@ class C45DecisionTree:
                 continue
             
             if self.is_continuous(x_feature):
-                x_clean = x_feature[~pd.isna(x_feature)]
-                thresholds = np.percentile(x_clean, [25, 50, 75])
+                mask_valid = ~pd.isna(x_feature)
+                x_clean = x_feature[mask_valid]
+                y_clean = y[mask_valid]
                 
-                for threshold in thresholds:
+                sorted_indices = np.argsort(x_clean)
+                x_sorted = x_clean[sorted_indices]
+                y_sorted = y_clean[sorted_indices]
+                
+                candidate_thresholds = []
+                for i in range(len(y_sorted) - 1):
+                    if y_sorted[i] != y_sorted[i + 1]:
+                        c = (x_sorted[i] + x_sorted[i + 1]) / 2
+                        candidate_thresholds.append(c)
+                
+                for threshold in candidate_thresholds:
                     if self.criterion == 'gain_ratio':
                         gain = self.gain_ratio(X, y, feature_idx, threshold)
                     else:
