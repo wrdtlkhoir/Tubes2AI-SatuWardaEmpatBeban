@@ -45,9 +45,12 @@ class C45DecisionTree:
             x_clean = x[~pd.isna(x)]
             if len(x_clean) == 0:
                 return False
-            x_clean.astype(float)
+            # Check if data type is numeric
+            if not np.issubdtype(x_clean.dtype, np.number):
+                return False
             unique_count = len(np.unique(x_clean))
-            return unique_count > 2 and (unique_count > len(x_clean) * 0.3 or unique_count > 5)
+            # Use the same threshold as sklearn: if unique values > 10, treat as continuous
+            return unique_count > 10
         except:
             return False
     
@@ -195,6 +198,7 @@ class C45DecisionTree:
         x_feature = X[:, best_feature]
         
         if best_threshold is not None:
+            # Continuous feature split
             mask_valid = ~pd.isna(x_feature)
             left_mask = np.zeros(n_samples, dtype=bool)
             right_mask = np.zeros(n_samples, dtype=bool)
@@ -202,6 +206,7 @@ class C45DecisionTree:
             left_mask[mask_valid] = x_feature[mask_valid] <= best_threshold
             right_mask[mask_valid] = x_feature[mask_valid] > best_threshold
             
+            # Handle missing values - assign to majority side
             n_left = left_mask.sum()
             n_right = right_mask.sum()
             if n_left >= n_right:
@@ -209,17 +214,43 @@ class C45DecisionTree:
             else:
                 right_mask[~mask_valid] = True
             
+            # Always create both children if they have samples
             if left_mask.sum() >= self.min_samples_leaf:
                 node.left = self.build_tree(X[left_mask], y[left_mask], depth + 1)
+            else:
+                # Create leaf node with majority class
+                node.left = Node()
+                node.left.is_leaf = True
+                node.left.value = self.classes[self.majority_class(y)]
+                
             if right_mask.sum() >= self.min_samples_leaf:
                 node.right = self.build_tree(X[right_mask], y[right_mask], depth + 1)
+            else:
+                # Create leaf node with majority class
+                node.right = Node()
+                node.right.is_leaf = True
+                node.right.value = self.classes[self.majority_class(y)]
                 
         else:
+            # Categorical feature split
             values = np.unique(x_feature[~pd.isna(x_feature)])
+            
+            # Build children for each categorical value
             for value in values:
                 mask = x_feature == value
                 if mask.sum() >= self.min_samples_leaf:
                     node.children[value] = self.build_tree(X[mask], y[mask], depth + 1)
+                else:
+                    # Create leaf node for small splits
+                    child = Node()
+                    child.is_leaf = True
+                    child.value = self.classes[self.majority_class(y[mask])] if mask.sum() > 0 else self.classes[self.majority_class(y)]
+                    node.children[value] = child
+            
+            # If no children created, make this a leaf
+            if len(node.children) == 0:
+                node.is_leaf = True
+                node.value = self.classes[self.majority_class(y)]
         
         return node
     
@@ -235,6 +266,7 @@ class C45DecisionTree:
         feature_val = x[node.feature]
         
         if pd.isna(feature_val):
+            # Handle missing values
             if node.left:
                 return self.predict_sample(x, node.left)
             elif node.right:
@@ -244,14 +276,28 @@ class C45DecisionTree:
             return self.classes[0]
         
         if node.threshold is not None:
+            # Continuous feature
             if feature_val <= node.threshold:
-                return self.predict_sample(x, node.left) if node.left else self.classes[0]
+                if node.left:
+                    return self.predict_sample(x, node.left)
+                else:
+                    # Fallback to majority class
+                    return node.value if hasattr(node, 'value') and node.value is not None else self.classes[0]
             else:
-                return self.predict_sample(x, node.right) if node.right else self.classes[0]
+                if node.right:
+                    return self.predict_sample(x, node.right)
+                else:
+                    # Fallback to majority class
+                    return node.value if hasattr(node, 'value') and node.value is not None else self.classes[0]
         else:
+            # Categorical feature
             if feature_val in node.children:
                 return self.predict_sample(x, node.children[feature_val])
-            return self.classes[0]
+            else:
+                # If value not seen in training, use first child or majority
+                if node.children:
+                    return self.predict_sample(x, list(node.children.values())[0])
+                return self.classes[0]
     
     def save_model(self, filepath):
         with open(filepath, 'wb') as f:
