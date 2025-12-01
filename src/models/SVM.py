@@ -3,7 +3,14 @@ import numpy as np
 
 class LinearSVM:
     def __init__(
-        self, lr=0.01, C=1.0, epochs=100, batch_size=32, seed=None, verbose=False
+        self,
+        lr=0.01,
+        C=1.0,
+        epochs=100,
+        batch_size=32,
+        seed=None,
+        verbose=False,
+        callback=None,
     ):
         self.lr = lr
         self.C = C
@@ -11,6 +18,7 @@ class LinearSVM:
         self.batch_size = batch_size
         self.seed = seed
         self.verbose = verbose
+        self.callback = callback
         self.w = None
         self.b = 0.0
 
@@ -44,6 +52,9 @@ class LinearSVM:
                 self.w -= grad_w * self.lr
                 self.b -= grad_b * self.lr
 
+            if self.callback is not None:
+                self.callback(self, ep, X, y)
+
             if self.verbose and (ep % max(1, self.epochs // 5) == 0):
                 print(f"epoch {ep}/{self.epochs}  obj={self._objective(X,y):.4f}")
 
@@ -64,7 +75,14 @@ class LinearSVM:
 
 class DAGSVM:
     def __init__(
-        self, lr=0.001, C=10.0, epochs=300, batch_size=64, seed=None, verbose=False
+        self,
+        lr=0.001,
+        C=10.0,
+        epochs=300,
+        batch_size=64,
+        seed=None,
+        verbose=False,
+        callback=None,
     ):
         self.lr = lr
         self.C = C
@@ -72,6 +90,7 @@ class DAGSVM:
         self.batch_size = batch_size
         self.seed = seed
         self.verbose = verbose
+        self.callback = callback
         self.classes = None
         self.pair_clfs = {}
 
@@ -99,6 +118,7 @@ class DAGSVM:
                     batch_size=self.batch_size,
                     seed=self.seed,
                     verbose=self.verbose,
+                    callback=self.callback,
                 )
                 clf.fit(X_pair, y_binary)
 
