@@ -64,7 +64,7 @@ class LinearSVM:
 
 class DAGSVM:
     def __init__(
-        self, lr=0.01, C=1.0, epochs=100, batch_size=32, seed=None, verbose=False
+        self, lr=0.001, C=10.0, epochs=300, batch_size=64, seed=None, verbose=False
     ):
         self.lr = lr
         self.C = C
