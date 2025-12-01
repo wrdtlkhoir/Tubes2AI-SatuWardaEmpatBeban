@@ -14,6 +14,7 @@ class Node:
         self.right = None
         self.children = {}
         self.is_leaf = False
+        self.class_distribution = None  # Store class distribution for better fallback
         
         
 class C45DecisionTree:
@@ -73,10 +74,16 @@ class C45DecisionTree:
         if threshold is not None:
             left_mask = X_valid[:, feature_idx] <= threshold
             right_mask = ~left_mask
+            # Ensure both splits have samples
+            if left_mask.sum() == 0 or right_mask.sum() == 0:
+                return 0
             splits = [(y_valid[left_mask], len(y_valid[left_mask])), 
                      (y_valid[right_mask], len(y_valid[right_mask]))]
         else:
             values = np.unique(X_valid[:, feature_idx])
+            # Need at least 2 different values for a meaningful split
+            if len(values) < 2:
+                return 0
             splits = [(y_valid[X_valid[:, feature_idx] == v], 
                       len(y_valid[X_valid[:, feature_idx] == v])) for v in values]
         
@@ -93,6 +100,10 @@ class C45DecisionTree:
     
     def gain_ratio(self, X, y, feature_idx, threshold=None):
         gain = self.information_gain(X, y, feature_idx, threshold)
+        
+        # If no gain, no point in calculating ratio
+        if gain <= 0:
+            return 0
         
         mask = ~pd.isna(X[:, feature_idx])
         if mask.sum() == 0:
@@ -116,8 +127,9 @@ class C45DecisionTree:
                 weight = n_split / n_total
                 split_info -= weight * np.log2(weight)
         
-        if split_info == 0:
-            return 0
+        # Avoid division by very small split_info (use small epsilon)
+        if split_info < 1e-10:
+            return gain  # Return raw gain if split_info too small
         return gain / split_info
     
     def find_best_split(self, X, y):
@@ -178,6 +190,9 @@ class C45DecisionTree:
         
         node = Node()
         
+        # Store class distribution for fallback
+        node.class_distribution = np.bincount(y, minlength=len(self.classes))
+        
         if (n_classes == 1 or 
             n_samples < self.min_samples_split or
             (self.max_depth and depth >= self.max_depth)):
@@ -194,6 +209,7 @@ class C45DecisionTree:
         
         node.feature = best_feature
         node.threshold = best_threshold
+        node.value = self.classes[self.majority_class(y)]  # Fallback value
         
         x_feature = X[:, best_feature]
         
@@ -266,13 +282,12 @@ class C45DecisionTree:
         feature_val = x[node.feature]
         
         if pd.isna(feature_val):
-            # Handle missing values
-            if node.left:
-                return self.predict_sample(x, node.left)
-            elif node.right:
-                return self.predict_sample(x, node.right)
-            elif node.children:
-                return self.predict_sample(x, list(node.children.values())[0])
+            # Handle missing values - use majority class from this node
+            if node.value is not None:
+                return node.value
+            # Last resort: use class with most samples at this node
+            if node.class_distribution is not None:
+                return self.classes[np.argmax(node.class_distribution)]
             return self.classes[0]
         
         if node.threshold is not None:
@@ -281,23 +296,21 @@ class C45DecisionTree:
                 if node.left:
                     return self.predict_sample(x, node.left)
                 else:
-                    # Fallback to majority class
-                    return node.value if hasattr(node, 'value') and node.value is not None else self.classes[0]
+                    # Fallback to majority class at this node
+                    return node.value if node.value is not None else self.classes[0]
             else:
                 if node.right:
                     return self.predict_sample(x, node.right)
                 else:
-                    # Fallback to majority class
-                    return node.value if hasattr(node, 'value') and node.value is not None else self.classes[0]
+                    # Fallback to majority class at this node
+                    return node.value if node.value is not None else self.classes[0]
         else:
             # Categorical feature
             if feature_val in node.children:
                 return self.predict_sample(x, node.children[feature_val])
             else:
-                # If value not seen in training, use first child or majority
-                if node.children:
-                    return self.predict_sample(x, list(node.children.values())[0])
-                return self.classes[0]
+                # If value not seen in training, use majority class at this node
+                return node.value if node.value is not None else self.classes[0]
     
     def save_model(self, filepath):
         with open(filepath, 'wb') as f:
