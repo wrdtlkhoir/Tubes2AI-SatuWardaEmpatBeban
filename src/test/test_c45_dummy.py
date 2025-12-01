@@ -147,3 +147,10 @@ model.print_tree()
 train_pred = model.predict(X_train)
 train_acc = (train_pred == y_train).mean()
 print(f"\n✓ Train Accuracy: {train_acc:.2%}")
+
+print("\n" + "=" * 80)
+print("SAVING VISUALIZATION")
+print("=" * 80)
+
+model.visualize_tree(max_depth=3, save_path='e:/SEMESTER_5/AI/Tubes2AI-SatuWardaEmpatBeban/src/models/tree_dummy.png')
+print("\n✓ Visualization saved to: src/models/tree_dummy.png")
