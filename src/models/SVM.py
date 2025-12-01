@@ -62,29 +62,79 @@ class LinearSVM:
         return obj
 
 
-def dagsvm_predict(X, classes, pair_clfs):
-    n = X.shape[0]
-    preds = np.empty(n, dtype=object)
+class DAGSVM:
+    def __init__(
+        self, lr=0.01, C=1.0, epochs=100, batch_size=32, seed=None, verbose=False
+    ):
+        self.lr = lr
+        self.C = C
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.seed = seed
+        self.verbose = verbose
+        self.classes = None
+        self.pair_clfs = {}
 
-    k = len(classes)
-    for idx in range(n):
-        x = X[idx : idx + 1]
-        winner_idx = 0
-        for challenger_idx in range(1, k):
-            if winner_idx < challenger_idx:
-                i, j = winner_idx, challenger_idx
-                clf = pair_clfs[(i, j)]
-                score = clf.decision_function(x)[0]
-                if score > 0:
-                    winner_idx = challenger_idx
-            else:
-                i, j = challenger_idx, winner_idx
-                clf = pair_clfs[(i, j)]
-                score = clf.decision_function(x)[0]
-                if score < 0:
-                    winner_idx = challenger_idx
-        preds[idx] = classes[winner_idx]
-    return preds
+    def fit(self, X, y):
+        X = np.asarray(X, dtype=float)
+        y = np.asarray(y)
+
+        self.classes = np.unique(y)
+        self.pair_clfs = {}
+
+        for i in range(len(self.classes)):
+            for j in range(i + 1, len(self.classes)):
+                c1, c2 = self.classes[i], self.classes[j]
+
+                mask = (y == c1) | (y == c2)
+                X_pair = X[mask]
+                y_pair = y[mask]
+
+                y_binary = np.where(y_pair == c1, -1, 1)
+
+                clf = LinearSVM(
+                    lr=self.lr,
+                    C=self.C,
+                    epochs=self.epochs,
+                    batch_size=self.batch_size,
+                    seed=self.seed,
+                    verbose=self.verbose,
+                )
+                clf.fit(X_pair, y_binary)
+
+                self.pair_clfs[(i, j)] = clf
+
+                if self.verbose:
+                    y_pred = clf.predict(X_pair)
+                    acc = np.mean(y_pred == y_binary)
+        return self
+
+    def predict(self, X):
+        X = np.asarray(X, dtype=float)
+        n = X.shape[0]
+        preds = np.empty(n, dtype=object)
+
+        k = len(self.classes)
+        for idx in range(n):
+            x = X[idx : idx + 1]
+            winner_idx = 0
+            for challenger_idx in range(1, k):
+                if winner_idx < challenger_idx:
+                    i, j = winner_idx, challenger_idx
+
+                    clf = self.pair_clfs[(i, j)]
+                    score = clf.decision_function(x)[0]
+                    if score > 0:
+                        winner_idx = challenger_idx
+                else:
+                    i, j = challenger_idx, winner_idx
+
+                    clf = self.pair_clfs[(i, j)]
+                    score = clf.decision_function(x)[0]
+                    if score < 0:
+                        winner_idx = challenger_idx
+            preds[idx] = self.classes[winner_idx]
+        return preds
 
 
 def hinge_grad_step(w, b, X_batch, y_batch, C):
