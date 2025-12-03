@@ -12,9 +12,7 @@ class LogRegression():
         self.random_state = random_state
         self.solver = solver
         self.class_weight = class_weight
-        self.weight = None
         self.threshold = 0.5
-        self.bias = 1
         self.learning_rate = 0.5
         self.coef_ = None
         self.intercept_ = None
@@ -95,65 +93,92 @@ class LogRegression():
     def _train_batch(self, X, y, iterations):
         n_samples = len(X)
         lambda_reg = self.get_regularization_strength(n_samples)
-        prev_weight = self.weight.copy()
+        
+        Y_onehot = np.zeros((n_samples, self.n_classes_))
+        Y_onehot[np.arange(n_samples), y] = 1
+        
+        prev_coef = self.coef_.copy()
+        prev_intercept = self.intercept_.copy()
         
         for epoch in range(iterations):
-            grad = np.zeros(len(self.weight))
-
-            for idx in range(n_samples):
-                x, y_val = X[idx], y[idx]
-                x_with_bias = np.concatenate([[self.bias], x])
-                sigma = self.calculate_sigma(x)
-                y_pred = self.calculate_probability(sigma)
-                sample_weight = self.sample_weights_[idx]
-
-                for i in range(len(self.weight)):
-                    grad[i] += sample_weight * (y_val - y_pred) * x_with_bias[i]
-
-            for i in range(len(self.weight)):
-                if i > 0:
-                    grad[i] -= lambda_reg * self.weight[i]
-                self.weight[i] += self.learning_rate * grad[i]
+            Z = X @ self.coef_ + self.intercept_
             
-            weight_diff = np.linalg.norm(self.weight - prev_weight)
-            if weight_diff < self.tol:
+            if self.n_classes_ == 2:
+                probs = self._sigmoid(Z[:, 1] - Z[:, 0]).reshape(-1, 1)
+                probs = np.hstack([1 - probs, probs])
+            else:
+                probs = self._softmax(Z)
+            
+            error = probs - Y_onehot
+            weighted_error = error * self.sample_weights_[:, np.newaxis]
+            
+            grad_coef = (X.T @ weighted_error) / n_samples + lambda_reg * self.coef_
+            grad_intercept = np.sum(weighted_error, axis=0) / n_samples
+            
+            # Update parameters
+            self.coef_ -= self.learning_rate * grad_coef
+            self.intercept_ -= self.learning_rate * grad_intercept
+            
+            # Check convergence
+            coef_diff = np.linalg.norm(self.coef_ - prev_coef)
+            intercept_diff = np.linalg.norm(self.intercept_ - prev_intercept)
+            if coef_diff + intercept_diff < self.tol:
                 self.n_iter_ = epoch + 1
                 break
-            prev_weight = self.weight.copy()
+            
+            prev_coef = self.coef_.copy()
+            prev_intercept = self.intercept_.copy()
         else:
             self.n_iter_ = iterations
 
-    # 2. Stochastic Gradient Ascent
-    # for all set of data randomized the order and train by that order until it gets the value 
+    # 2. Stochastic Gradient Descent
     def _train_sgd(self, X, y, iterations):
         n_samples = len(X)
         lambda_reg = self.get_regularization_strength(n_samples)
-        prev_weight = self.weight.copy()
+        
+        prev_coef = self.coef_.copy()
+        prev_intercept = self.intercept_.copy()
         
         for epoch in range(iterations):
             indices = list(range(n_samples))
             random.shuffle(indices)
-
-            for idx in indices:
-                x, y_val = X[idx], y[idx]
-                x_with_bias = np.concatenate([[self.bias], x])
-                sigma = self.calculate_sigma(x)
-                y_pred = self.calculate_probability(sigma)
-                sample_weight = self.sample_weights_[idx]
-
-                for j in range(len(self.weight)):
-                    grad = sample_weight * (y_val - y_pred) * x_with_bias[j]
-                    if j > 0:
-                        grad -= lambda_reg * self.weight[j]
-                    self.weight[j] += self.learning_rate * grad
             
-            weight_diff = np.linalg.norm(self.weight - prev_weight)
-            if weight_diff < self.tol:
+            for idx in indices:
+                x_i = X[idx:idx+1]  
+                y_i = y[idx]
+                
+                z = x_i @ self.coef_ + self.intercept_
+                
+                if self.n_classes_ == 2:
+                    prob = self._sigmoid(z[0, 1] - z[0, 0])
+                    probs = np.array([[1 - prob, prob]])
+                else:
+                    probs = self._softmax(z)
+                
+                y_onehot = np.zeros((1, self.n_classes_))
+                y_onehot[0, y_i] = 1
+                error = (probs - y_onehot) * self.sample_weights_[idx]
+                
+                grad_coef = x_i.T @ error + lambda_reg * self.coef_
+                grad_intercept = error[0]
+                
+                # Update parameters
+                self.coef_ -= self.learning_rate * grad_coef
+                self.intercept_ -= self.learning_rate * grad_intercept
+            
+            # Check convergence
+            coef_diff = np.linalg.norm(self.coef_ - prev_coef)
+            intercept_diff = np.linalg.norm(self.intercept_ - prev_intercept)
+            if coef_diff + intercept_diff < self.tol:
                 self.n_iter_ = epoch + 1
                 break
-            prev_weight = self.weight.copy()
+            
+            prev_coef = self.coef_.copy()
+            prev_intercept = self.intercept_.copy()
         else:
             self.n_iter_ = iterations
+
+
     def _train_lbfgs(self, X, y, iterations):
         n_samples, n_features = X.shape
         n_classes = self.n_classes_
@@ -218,18 +243,10 @@ class LogRegression():
 
     @property
     def feature_importances_(self):
-        if self.weight is None:
+        if self.coef_ is None:
             raise ValueError("Model must be fitted before accessing feature importances")
         
-        # Use L-BFGS-B coefficients
-        if hasattr(self, 'coef_') and hasattr(self, 'intercept_'):
-            if self.coef_.ndim > 1:
-                importances = np.linalg.norm(self.coef_, axis=0)
-            else:
-                importances = np.abs(self.coef_)
-        else:
-            # Use standard weights for SGD/Batch
-            importances = np.abs(self.weight[1:])
+        importances = np.linalg.norm(self.coef_, axis=1)
         
         if importances.sum() > 0:
             importances = importances / importances.sum()
@@ -261,8 +278,27 @@ class LogRegression():
         return self
     
 
-    def predict(self, x):
-        sigma = self.calculate_sigma(x)
-        prob = self.calculate_probability(sigma)
-        return 1 if prob > self.threshold else 0
+    def predict_proba(self, X):
+        X = np.asarray(X)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        
+        Z = X @ self.coef_ + self.intercept_
+        
+        if self.n_classes_ == 2:
+            probs_1 = self._sigmoid(Z[:, 1] - Z[:, 0]).reshape(-1, 1)
+            probs = np.hstack([1 - probs_1, probs_1])
+        else:
+            probs = self._softmax(Z)
+        
+        return probs
+
+    def predict(self, X):
+        probs = self.predict_proba(X)
+        predictions = np.argmax(probs, axis=1)
+        
+        if hasattr(self, 'inverse_label_mapping_'):
+            predictions = np.array([self.inverse_label_mapping_[p] for p in predictions])
+        
+        return predictions
     
