@@ -1,6 +1,9 @@
 import numpy as np
+from sklearn.preprocessing import OneHotEncoder, LabelEncoder, PowerTransformer
 import math
 import random
+from scipy.optimize import minimize
+from scipy.special import logsumexp
 
 class LogRegression():
     def __init__(self, C=1.0, max_iter=1000, random_state=None, solver='lbfgs', class_weight=None ):
@@ -28,11 +31,17 @@ class LogRegression():
         self.learning_rate = value
    
     def calculate_sigma(self, x):
-        x_with_bias = [self.bias] + x
+        x_with_bias = np.concatenate([[self.bias], x])
         return np.dot(self.weight, x_with_bias)
     
     def calculate_probability(self, sigma):
-        return 1 / (1 + pow(math.e, -sigma))
+        sigma = np.clip(sigma, -500, 500)
+        if sigma >= 0:
+            z = np.exp(-sigma)
+            return 1 / (1 + z)
+        else:
+            z = np.exp(sigma)
+            return z / (1 + z)
     
     def softmax(self, z):
         max_z = np.max(z, axis=1, keepdims=True)
@@ -40,8 +49,30 @@ class LogRegression():
         return exp_z / np.sum(exp_z, axis=1, keepdims=True)
     
     def fit(self, X, y, epochs=None):
-        n_features = len(X[0])
-        self.weight = np.zeros(n_features + 1)
+        X = np.asarray(X)
+        y_original = np.asarray(y)
+        y = y_original.copy()
+        
+        if y.dtype.kind not in ['i', 'u', 'f']:
+            unique_labels = np.unique(y)
+            self.label_mapping_ = {label: idx for idx, label in enumerate(sorted(unique_labels))}
+            self.inverse_label_mapping_ = {idx: label for label, idx in self.label_mapping_.items()}
+            y = np.array([self.label_mapping_[label] for label in y])
+        
+        self.classes_ = np.unique(y)
+        self.n_classes_ = len(self.classes_)
+        
+        self.sample_weights_ = self._compute_class_weights(y)
+        
+        # Initialize weights
+        n_samples, n_features = X.shape
+        if self.solver != "lbfgs":
+            self.weight = np.zeros(n_features + 1)
+        
+        # Set random seed
+        if self.random_state is not None:
+            random.seed(self.random_state)
+            np.random.seed(self.random_state)
         
         iterations = epochs if epochs is not None else self.max_iter
 
@@ -59,7 +90,6 @@ class LogRegression():
         if n_samples == 0:
             return 0
         return 1.0 / (self.C * n_samples)
-
 
     # 1. Batch Logistic Regression
     def _train_batch(self, X, y, iterations):
@@ -124,6 +154,112 @@ class LogRegression():
             prev_weight = self.weight.copy()
         else:
             self.n_iter_ = iterations
+    def _train_lbfgs(self, X, y, iterations):
+        n_samples, n_features = X.shape
+        n_classes = self.n_classes_
+        
+        encoder = OneHotEncoder(sparse_output=False, categories=[self.classes_])
+        Y_onehot = encoder.fit_transform(y.reshape(-1, 1))
+        
+        sample_weights = self.sample_weights_
+        
+        # Regularization
+        alpha = 1.0 / self.C
+        
+        def loss_grad(params):
+            """Compute loss and gradient for L-BFGS-B."""
+            # Reshape
+            W = params[:n_features * n_classes].reshape(n_features, n_classes)
+            b = params[n_features * n_classes:]
+            
+            Z = X @ W + b
+            
+            # log probabilities
+            lse = logsumexp(Z, axis=1, keepdims=True)
+            log_probs = Z - lse
+            probs = np.exp(log_probs)
+            
+            # Compute loss
+            if sample_weights is not None:
+                loss_term = -np.sum(sample_weights[:, np.newaxis] * Y_onehot * log_probs)
+            else:
+                loss_term = -np.sum(Y_onehot * log_probs)
+            
+            reg_term = 0.5 * alpha * np.sum(W**2)
+            total_loss = loss_term + reg_term
+            
+            # Compute gradients
+            diff = probs - Y_onehot
+            if sample_weights is not None:
+                diff = diff * sample_weights[:, np.newaxis]
+            
+            grad_W = X.T @ diff + alpha * W
+            grad_b = np.sum(diff, axis=0)
+            grad = np.concatenate([grad_W.ravel(), grad_b])
+            
+            return total_loss, grad
+        
+        # Initialize parameters
+        initial_params = np.zeros(n_features * n_classes + n_classes)
+        
+        # Optimize
+        res = minimize(
+            fun=loss_grad,
+            x0=initial_params,
+            method='L-BFGS-B',
+            jac=True,
+            options={'maxiter': iterations, 'gtol': self.tol}
+        )
+        
+        # Extract optimized parameters
+        self.coef_ = res.x[:n_features * n_classes].reshape(n_features, n_classes).T
+        self.intercept_ = res.x[n_features * n_classes:]
+        self.n_iter_ = res.nit
+
+    @property
+    def feature_importances_(self):
+        if self.weight is None:
+            raise ValueError("Model must be fitted before accessing feature importances")
+        
+        # Use L-BFGS-B coefficients
+        if hasattr(self, 'coef_') and hasattr(self, 'intercept_'):
+            if self.coef_.ndim > 1:
+                importances = np.linalg.norm(self.coef_, axis=0)
+            else:
+                importances = np.abs(self.coef_)
+        else:
+            # Use standard weights for SGD/Batch
+            importances = np.abs(self.weight[1:])
+        
+        if importances.sum() > 0:
+            importances = importances / importances.sum()
+        
+        return importances
+    
+    def get_params(self, deep=True):
+        return {
+            'solver': self.solver,
+            'learning_rate': self.learning_rate,
+            'C': self.C,
+            'max_iter': self.max_iter,
+            'class_weight': self.class_weight,
+            'random_state': self.random_state,
+            'tol': self.tol
+        }
+    
+    def set_params(self, **params):
+        for key, value in params.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+            else:
+                raise ValueError(f"Invalid parameter {key} for estimator {self.__class__.__name__}")
+        
+        if 'random_state' in params and params['random_state'] is not None:
+            random.seed(params['random_state'])
+            np.random.seed(params['random_state'])
+        
+        return self
+    
 
     def predict(self, x):
         sigma = self.calculate_sigma(x)
