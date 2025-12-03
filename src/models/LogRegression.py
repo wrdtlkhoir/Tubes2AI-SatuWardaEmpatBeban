@@ -40,55 +40,90 @@ class LogRegression():
         return exp_z / np.sum(exp_z, axis=1, keepdims=True)
     
     def fit(self, X, y, epochs=None):
-        self.data = []
-        self.add_data(X, y)
-        
         n_features = len(X[0])
         self.weight = np.zeros(n_features + 1)
         
         iterations = epochs if epochs is not None else self.max_iter
 
         if self.solver == "sgd":
-            self._train_sgd(iterations)
+            self._train_sgd(X, y, iterations)
         elif self.solver == "batch":
-            self._train_batch(iterations)
+            self._train_batch(X, y, iterations)
+        elif self.solver == "lbfgs":
+            self._train_lbfgs(X, y, iterations)
         else:
             raise ValueError(f"Unknown solver: {self.solver}")
     
+    def get_regularization_strength(self):
+        n_samples = len(self.data)
+        if n_samples == 0:
+            return 0
+        return 1.0 / (self.C * n_samples)
 
 
     # 1. Batch Logistic Regression
-    def train_batch(self, epochs=10):
-        for epoch in range(epochs):
+    def _train_batch(self, X, y, iterations):
+        n_samples = len(X)
+        lambda_reg = self.get_regularization_strength(n_samples)
+        prev_weight = self.weight.copy()
+        
+        for epoch in range(iterations):
             grad = np.zeros(len(self.weight))
 
-            for x, y in self.data: 
-                x_with_bias = [self.bias] + x
-
+            for idx in range(n_samples):
+                x, y_val = X[idx], y[idx]
+                x_with_bias = np.concatenate([[self.bias], x])
                 sigma = self.calculate_sigma(x)
                 y_pred = self.calculate_probability(sigma)
+                sample_weight = self.sample_weights_[idx]
 
-                for i in range (len(self.weight)):
-                    grad[i] += (y - y_pred) * x_with_bias[i]
+                for i in range(len(self.weight)):
+                    grad[i] += sample_weight * (y_val - y_pred) * x_with_bias[i]
 
             for i in range(len(self.weight)):
+                if i > 0:
+                    grad[i] -= lambda_reg * self.weight[i]
                 self.weight[i] += self.learning_rate * grad[i]
+            
+            weight_diff = np.linalg.norm(self.weight - prev_weight)
+            if weight_diff < self.tol:
+                self.n_iter_ = epoch + 1
+                break
+            prev_weight = self.weight.copy()
+        else:
+            self.n_iter_ = iterations
 
     # 2. Stochastic Gradient Ascent
     # for all set of data randomized the order and train by that order until it gets the value 
-    def train_sdg(self, epochs=10):
-        for epoch in range(epoch): 
-            random.shuffle(self.data)
+    def _train_sgd(self, X, y, iterations):
+        n_samples = len(X)
+        lambda_reg = self.get_regularization_strength(n_samples)
+        prev_weight = self.weight.copy()
+        
+        for epoch in range(iterations):
+            indices = list(range(n_samples))
+            random.shuffle(indices)
 
-            for x, y in self.data:
-                x_with_bias = [self.bias] + x
-
+            for idx in indices:
+                x, y_val = X[idx], y[idx]
+                x_with_bias = np.concatenate([[self.bias], x])
                 sigma = self.calculate_sigma(x)
                 y_pred = self.calculate_probability(sigma)
+                sample_weight = self.sample_weights_[idx]
 
-                for i in range(len(self.weight)):
-                    self.weight[i] += self.learning_rate * (y - y_pred) * x_with_bias[i]
-
+                for j in range(len(self.weight)):
+                    grad = sample_weight * (y_val - y_pred) * x_with_bias[j]
+                    if j > 0:
+                        grad -= lambda_reg * self.weight[j]
+                    self.weight[j] += self.learning_rate * grad
+            
+            weight_diff = np.linalg.norm(self.weight - prev_weight)
+            if weight_diff < self.tol:
+                self.n_iter_ = epoch + 1
+                break
+            prev_weight = self.weight.copy()
+        else:
+            self.n_iter_ = iterations
 
     def predict(self, x):
         sigma = self.calculate_sigma(x)
