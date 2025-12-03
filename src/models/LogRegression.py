@@ -3,6 +3,9 @@ from sklearn.preprocessing import OneHotEncoder
 import random
 from scipy.optimize import minimize
 from scipy.special import logsumexp
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from matplotlib import cm
 
 class LogRegression():
     def __init__(self, C=1.0, max_iter=1000, learning_rate=0.1, random_state=None, solver='lbfgs', class_weight=None, tol=1e-4 ):
@@ -16,6 +19,32 @@ class LogRegression():
         self.coef_ = None
         self.intercept_ = None
         self.classes_ = None
+
+        # Bonus
+        self.loss_history_ = []
+        self.param_history_ = []
+
+    def _compute_loss(self, X, y, Y_onehot=None):
+        n_samples = len(X)
+        lambda_reg = self.get_regularization_strength(n_samples)
+        
+        if Y_onehot is None:
+            Y_onehot = np.zeros((n_samples, self.n_classes_))
+            Y_onehot[np.arange(n_samples), y] = 1
+        
+        Z = X @ self.coef_ + self.intercept_
+        
+        if self.n_classes_ == 2:
+            probs = self._sigmoid(Z[:, 1] - Z[:, 0]).reshape(-1, 1)
+            probs = np.hstack([1 - probs, probs])
+        else:
+            probs = self.softmax(Z)
+        
+        probs = np.clip(probs, 1e-15, 1 - 1e-15)
+        loss = -np.mean(np.sum(Y_onehot * np.log(probs) * self.sample_weights_[:, np.newaxis], axis=1))
+        loss += 0.5 * lambda_reg * np.sum(self.coef_**2)
+        
+        return loss
 
     # Setter Getter
     def set_learning_rate(self, value):
@@ -48,7 +77,6 @@ class LogRegression():
         self.coef_ = np.zeros((n_features, self.n_classes_))
         self.intercept_ = np.zeros(self.n_classes_)
         
-        # Set random seed
         if self.random_state is not None:
             random.seed(self.random_state)
             np.random.seed(self.random_state)
@@ -80,7 +108,19 @@ class LogRegression():
         prev_coef = self.coef_.copy()
         prev_intercept = self.intercept_.copy()
         
+        # Initialize tracking
+        self.loss_history_ = []
+        self.param_history_ = []
+        
         for epoch in range(iterations):
+            if self.n_classes_ == 2:
+                self.param_history_.append([self.intercept_[1], self.coef_[0, 1]])
+            else:
+                # multinomial
+                self.param_history_.append(np.concatenate([self.coef_.ravel(), self.intercept_]))
+            loss = self._compute_loss(X, y, Y_onehot)
+            self.loss_history_.append(loss)
+            
             Z = X @ self.coef_ + self.intercept_
             
             if self.n_classes_ == 2:
@@ -119,11 +159,23 @@ class LogRegression():
         prev_coef = self.coef_.copy()
         prev_intercept = self.intercept_.copy()
         
+        self.loss_history_ = []
+        self.param_history_ = []
+        
         for epoch in range(iterations):
             indices = list(range(n_samples))
             random.shuffle(indices)
             
             for idx in indices:
+                if self.n_classes_ == 2:
+                    self.param_history_.append([self.intercept_[1], self.coef_[0, 1]])
+                else:
+                    self.param_history_.append(np.concatenate([self.coef_.ravel(), self.intercept_]))
+                
+                if len(self.loss_history_) % 10 == 0: 
+                    loss = self._compute_loss(X, y)
+                    self.loss_history_.append(loss)
+                
                 x_i = X[idx:idx+1]  
                 y_i = y[idx]
                 
@@ -158,7 +210,6 @@ class LogRegression():
         else:
             self.n_iter_ = iterations
 
-
     def _train_lbfgs(self, X, y, iterations):
         n_samples, n_features = X.shape
         n_classes = self.n_classes_
@@ -172,18 +223,15 @@ class LogRegression():
         alpha = 1.0 / self.C
         
         def loss_grad(params):
-            # Reshape
             W = params[:n_features * n_classes].reshape(n_features, n_classes)
             b = params[n_features * n_classes:]
             
             Z = X @ W + b
             
-            # log probabilities
             lse = logsumexp(Z, axis=1, keepdims=True)
             log_probs = Z - lse
             probs = np.exp(log_probs)
             
-            # Compute loss
             if sample_weights is not None:
                 loss_term = -np.sum(sample_weights[:, np.newaxis] * Y_onehot * log_probs)
             else:
@@ -192,7 +240,6 @@ class LogRegression():
             reg_term = 0.5 * alpha * np.sum(W**2)
             total_loss = loss_term + reg_term
             
-            # Compute gradients
             diff = probs - Y_onehot
             if sample_weights is not None:
                 diff = diff * sample_weights[:, np.newaxis]
@@ -205,15 +252,30 @@ class LogRegression():
         
         initial_params = np.zeros(n_features * n_classes + n_classes)
         
+        self.loss_history_ = []
+        self.param_history_ = []
+        
+        def callback(params):
+            W = params[:n_features * n_classes].reshape(n_features, n_classes)
+            b = params[n_features * n_classes:]
+            
+            if self.n_classes_ == 2:
+                self.param_history_.append([b[1], W[0, 1]])
+            else:
+                self.param_history_.append(params.copy())
+            
+            loss, _ = loss_grad(params)
+            self.loss_history_.append(loss)
+        
         res = minimize(
             fun=loss_grad,
             x0=initial_params,
             method='L-BFGS-B',
             jac=True,
+            callback=callback,
             options={'maxiter': iterations, 'gtol': self.tol}
         )
         
-        # Extract optimized parameters
         self.coef_ = res.x[:n_features * n_classes].reshape(n_features, n_classes).T
         self.intercept_ = res.x[n_features * n_classes:]
         self.n_iter_ = res.nit
@@ -287,10 +349,129 @@ class LogRegression():
 
     def _sigmoid(self, z):
         z = np.clip(z, -500, 500)
-        return np.where(z >= 0, 
-                       1 / (1 + np.exp(-z)),
-                       np.exp(z) / (1 + np.exp(z)))
-
+        return np.where(z >= 0, 1 / (1 + np.exp(-z)), np.exp(z) / (1 + np.exp(z)))
+    
+    def animate_logloss(self, X, y, save_path='logloss_animation.mp4', fps=10, param_indices=(0, 1)):
+        if len(self.param_history_) == 0:
+            raise ValueError("No training history found.")
+        
+        params = np.array(self.param_history_)
+        
+        idx1, idx2 = param_indices
+        theta1_path = params[:, idx1]
+        theta2_path = params[:, idx2]
+        
+        n_features = self.coef_.shape[0] if self.solver == 'lbfgs' else self.coef_.shape[1]
+        n_coefs = n_features * self.n_classes_
+        
+        if idx1 < n_coefs:
+            feat_idx1 = idx1 // self.n_classes_
+            class_idx1 = idx1 % self.n_classes_
+            param1_name = f'W[{feat_idx1},{class_idx1}]'
+        else:
+            param1_name = f'b[{idx1 - n_coefs}]'
+        
+        if idx2 < n_coefs:
+            feat_idx2 = idx2 // self.n_classes_
+            class_idx2 = idx2 % self.n_classes_
+            param2_name = f'W[{feat_idx2},{class_idx2}]'
+        else:
+            param2_name = f'b[{idx2 - n_coefs}]'
+        
+        theta1_min, theta1_max = theta1_path.min() - 0.5, theta1_path.max() + 0.5
+        theta2_min, theta2_max = theta2_path.min() - 0.5, theta2_path.max() + 0.5
+        
+        theta_grid_1 = np.linspace(theta1_min, theta1_max, 50)
+        theta_grid_2 = np.linspace(theta2_min, theta2_max, 50)
+        Theta1, Theta2 = np.meshgrid(theta_grid_1, theta_grid_2)
+        
+        Loss = np.zeros_like(Theta1)
+        n_samples = len(X)
+        lambda_reg = self.get_regularization_strength(n_samples)
+        
+        print(f"Computing loss for multinomial ({param1_name} vs {param2_name})...")
+        
+        # Get current parameters
+        if self.solver == 'lbfgs':
+            current_W = self.coef_.T.copy()
+        else:
+            current_W = self.coef_.copy()
+        current_b = self.intercept_.copy()
+        
+        for i in range(Theta1.shape[0]):
+            for j in range(Theta1.shape[1]):
+                temp_W = current_W.copy()
+                temp_b = current_b.copy()
+                
+                # Modify specific parameters
+                if idx1 < n_coefs:
+                    feat1 = idx1 // self.n_classes_
+                    cls1 = idx1 % self.n_classes_
+                    temp_W[feat1, cls1] = Theta1[i, j]
+                else:
+                    temp_b[idx1 - n_coefs] = Theta1[i, j]
+                
+                if idx2 < n_coefs:
+                    feat2 = idx2 // self.n_classes_
+                    cls2 = idx2 % self.n_classes_
+                    temp_W[feat2, cls2] = Theta2[i, j]
+                else:
+                    temp_b[idx2 - n_coefs] = Theta2[i, j]
+                
+                # Compute loss
+                Z = X @ temp_W + temp_b
+                probs = self.softmax(Z)
+                probs = np.clip(probs, 1e-15, 1 - 1e-15)
+                
+                Y_onehot = np.zeros((n_samples, self.n_classes_))
+                Y_onehot[np.arange(n_samples), y] = 1
+                
+                loss = -np.mean(np.sum(Y_onehot * np.log(probs) * 
+                                        self.sample_weights_[:, np.newaxis], axis=1))
+                loss += 0.5 * lambda_reg * np.sum(temp_W**2)
+                
+                Loss[i, j] = loss
+        
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        contour = ax.contour(Theta1, Theta2, Loss, levels=20, cmap='viridis', alpha=0.6)
+        ax.contourf(Theta1, Theta2, Loss, levels=20, cmap='viridis', alpha=0.3)
+        plt.colorbar(contour, ax=ax, label='Log-Loss')
+        
+        line, = ax.plot([], [], 'r-', linewidth=2, label='Parameter trajectory')
+        point, = ax.plot([], [], 'ro', markersize=10, label='Current position')
+        
+        ax.set_xlabel(param1_name, fontsize=12)
+        ax.set_ylabel(param2_name, fontsize=12)
+        ax.set_title('Log-Loss Contours and Parameter Trajectory', fontsize=14)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        def animate(frame):
+            line.set_data(theta1_path[:frame+1], theta2_path[:frame+1])
+            point.set_data([theta1_path[frame]], [theta2_path[frame]])
+            
+            if frame < len(self.loss_history_):
+                ax.set_title(f'Iteration {frame}, Loss: {self.loss_history_[frame]:.4f}', 
+                            fontsize=14)
+            
+            return line, point
+        
+        anim = animation.FuncAnimation(
+            fig, animate, frames=len(theta1_path),
+            interval=1000/fps, blit=True, repeat=True
+        )
+        
+        print(f"Saving animation to {save_path}")
+        Writer = animation.writers['ffmpeg']
+        writer = Writer(fps=fps, metadata=dict(artist='LogRegression'), bitrate=1800)
+        anim.save(save_path, writer=writer)
+        
+        plt.close()
+        print(f"Animation saved on {save_path}")
+        
+        return anim
+    
 class RFE:
     def __init__(self, estimator, n_features_to_select=None, step=1):
         self.estimator = estimator
@@ -339,3 +520,5 @@ class RFE:
 
     def transform(self, X):
         return X[:, self.support_]
+
+
