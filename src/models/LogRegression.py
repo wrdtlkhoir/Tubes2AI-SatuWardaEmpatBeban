@@ -214,7 +214,7 @@ class LogRegression():
         )
         
         # Extract optimized parameters
-        self.coef_ = res.x[:n_features * n_classes].reshape(n_features, n_classes)
+        self.coef_ = res.x[:n_features * n_classes].reshape(n_features, n_classes).T
         self.intercept_ = res.x[n_features * n_classes:]
         self.n_iter_ = res.nit
     
@@ -266,7 +266,7 @@ class LogRegression():
         if X.ndim == 1:
             X = X.reshape(1, -1)
         
-        Z = X @ self.coef_ + self.intercept_
+        Z = X @ (self.coef_.T if self.solver=='lbfgs' else self.coef_) + self.intercept_
         
         if self.n_classes_ == 2:
             probs_1 = self._sigmoid(Z[:, 1] - Z[:, 0]).reshape(-1, 1)
