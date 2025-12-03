@@ -3,12 +3,19 @@ import math
 import random
 
 class LogRegression():
-    def __init__(self):
-        weight = None
-        data = [] # List of (feature vectors, labels)
-        threshold = 0.5
-        bias = 1
-        learning_rate = 0.5
+    def __init__(self, C=1.0, max_iter=1000, random_state=None, solver='lbfgs', class_weight=None ):
+        self.C = C
+        self.max_iter = max_iter
+        self.random_state = random_state
+        self.solver = solver
+        self.class_weight = class_weight
+        self.weight = None
+        self.threshold = 0.5
+        self.bias = 1
+        self.learning_rate = 0.5
+        self.coef_ = None
+        self.intercept_ = None
+        self.classes_ = None
 
     # Setter Getter
     def set_bias(self, value):
@@ -20,18 +27,6 @@ class LogRegression():
     def set_learning_rate(self, value):
         self.learning_rate = value
    
-    # Core Function
-    # X = [[1,2,3], [4,5,6], ...]
-    # y = [1, 0, 1, ...]
-    def add_data(self, X, y):
-        for i in range (len(X)):
-            self.data.append((X[i], y[i]))
-        
-        # Initialize weights
-        if self.weight is None: 
-            n_features = len(X[0])
-            self.weight = np.zeros(n_features + 1)
-
     def calculate_sigma(self, x):
         x_with_bias = [self.bias] + x
         return np.dot(self.weight, x_with_bias)
@@ -39,8 +34,31 @@ class LogRegression():
     def calculate_probability(self, sigma):
         return 1 / (1 + pow(math.e, -sigma))
     
+    def softmax(self, z):
+        max_z = np.max(z, axis=1, keepdims=True)
+        exp_z = np.exp(z - max_z)
+        return exp_z / np.sum(exp_z, axis=1, keepdims=True)
+    
+    def fit(self, X, y, epochs=None):
+        self.data = []
+        self.add_data(X, y)
+        
+        n_features = len(X[0])
+        self.weight = np.zeros(n_features + 1)
+        
+        iterations = epochs if epochs is not None else self.max_iter
+
+        if self.solver == "sgd":
+            self._train_sgd(iterations)
+        elif self.solver == "batch":
+            self._train_batch(iterations)
+        else:
+            raise ValueError(f"Unknown solver: {self.solver}")
+    
+
+
     # 1. Batch Logistic Regression
-    def iterate_batch(self, epochs=10):
+    def train_batch(self, epochs=10):
         for epoch in range(epochs):
             grad = np.zeros(len(self.weight))
 
@@ -57,8 +75,8 @@ class LogRegression():
                 self.weight[i] += self.learning_rate * grad[i]
 
     # 2. Stochastic Gradient Ascent
-    # for all set of data randomized the order and iterate by that order until it gets the value 
-    def iterate(self, epochs=10):
+    # for all set of data randomized the order and train by that order until it gets the value 
+    def train_sdg(self, epochs=10):
         for epoch in range(epoch): 
             random.shuffle(self.data)
 
@@ -71,49 +89,6 @@ class LogRegression():
                 for i in range(len(self.weight)):
                     self.weight[i] += self.learning_rate * (y - y_pred) * x_with_bias[i]
 
-    # 3. Mini batch gradient ascent
-    def iterate_mini_batch(self, batch_size=4, epochs=10):
-        for epoch in range(epoch): 
-            random.shuffle(self.data)
-
-            for i in range(0, len(self.data), batch_size):
-                batch = self.data[i:i+batch_size]
-
-                # Initialize batch gradient
-                grad = np.zeros(len(self.weight))
-
-                for x, y in batch:
-                    x_with_bias = [self.bias] + x
-                    sigma = self.calculate_sigma(x)
-                    y_pred = self.calculate_probability(sigma)
-
-                    # Accumulate gradient
-                    for j in range(len(self.weight)):
-                        grad[j] += (y - y_pred) * x_with_bias[j]
-
-                # Update weight per batch
-                for j in range(self.weight):
-                    self.weight[j] += self.learning_rate * grad[j]
-
-    # 4. Log reg with momentum
-    def iterate_momentum(self, epochs=10, beta=0.9):
-        v = np.zeros(len(self.weight))
-
-        for _ in range(epochs):
-            random.shuffle(self.data)
-
-            for x, y in self.data:
-                x_with_bias = [self.bias] + x
-                sigma = self.calculate_sigma(x)
-                y_pred = self.calculate_probability(sigma)   
-
-                grad = np.zeros(len(self.weight))
-                for j in range(len(self.weight)):
-                    grad[j] = (y - y_pred) * x_with_bias[j]
-
-            v = beta * v + self.learning_rate * grad
-
-            self.weight += v
 
     def predict(self, x):
         sigma = self.calculate_sigma(x)
