@@ -5,7 +5,7 @@ import random
 from scipy.optimize import minimize
 from scipy.special import logsumexp
 
-class LogRegression():
+class LogisticRegression():
     def __init__(self, C=1.0, max_iter=1000, random_state=None, solver='lbfgs', class_weight=None ):
         self.C = C
         self.max_iter = max_iter
@@ -192,7 +192,6 @@ class LogRegression():
         alpha = 1.0 / self.C
         
         def loss_grad(params):
-            """Compute loss and gradient for L-BFGS-B."""
             # Reshape
             W = params[:n_features * n_classes].reshape(n_features, n_classes)
             b = params[n_features * n_classes:]
@@ -224,10 +223,8 @@ class LogRegression():
             
             return total_loss, grad
         
-        # Initialize parameters
         initial_params = np.zeros(n_features * n_classes + n_classes)
         
-        # Optimize
         res = minimize(
             fun=loss_grad,
             x0=initial_params,
@@ -301,4 +298,52 @@ class LogRegression():
             predictions = np.array([self.inverse_label_mapping_[p] for p in predictions])
         
         return predictions
-    
+
+class RFE:
+    def __init__(self, estimator, n_features_to_select=None, step=1):
+        self.estimator = estimator
+        self.n_features_to_select = n_features_to_select
+        self.step = step
+        self.support_ = None
+        
+    def fit(self, X, y):
+        n_samples, n_features = X.shape
+        if self.n_features_to_select is None:
+            n_features_to_select = n_features // 2
+        else:
+            n_features_to_select = self.n_features_to_select
+            
+        support = np.ones(n_features, dtype=bool)
+        current_features = n_features
+        
+        while current_features > n_features_to_select:
+            X_subset = X[:, support]
+            
+            params = self.estimator.get_params()
+            model = LogisticRegression(**params)
+            model.fit(X_subset, y)
+            
+            if model.coef_.ndim > 1:
+                importances = np.linalg.norm(model.coef_, axis=0)
+            else:
+                importances = np.abs(model.coef_)
+                
+            if isinstance(self.step, float):
+                step_size = max(1, int(self.step * n_features))
+            else:
+                step_size = self.step
+                
+            n_to_remove = min(step_size, current_features - n_features_to_select)
+            indices = np.argsort(importances)[:n_to_remove]
+            features_idx_map = np.where(support)[0]
+            features_to_remove = features_idx_map[indices]
+            
+            support[features_to_remove] = False
+            current_features -= n_to_remove
+            print(f"RFE: {current_features} features left...")
+            
+        self.support_ = support
+        return self
+
+    def transform(self, X):
+        return X[:, self.support_]
