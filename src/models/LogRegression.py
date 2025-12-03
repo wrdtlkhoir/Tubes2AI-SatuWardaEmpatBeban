@@ -1,6 +1,5 @@
 import numpy as np
-from sklearn.preprocessing import OneHotEncoder, LabelEncoder, PowerTransformer
-import math
+from sklearn.preprocessing import OneHotEncoder
 import random
 from scipy.optimize import minimize
 from scipy.special import logsumexp
@@ -19,25 +18,9 @@ class LogRegression():
         self.classes_ = None
 
     # Setter Getter
-    def set_bias(self, value):
-        self.bias = value
-
     def set_learning_rate(self, value):
         self.learning_rate = value
    
-    def calculate_sigma(self, x):
-        x_with_bias = np.concatenate([[self.bias], x])
-        return np.dot(self.weight, x_with_bias)
-    
-    def calculate_probability(self, sigma):
-        sigma = np.clip(sigma, -500, 500)
-        if sigma >= 0:
-            z = np.exp(-sigma)
-            return 1 / (1 + z)
-        else:
-            z = np.exp(sigma)
-            return z / (1 + z)
-    
     def softmax(self, z):
         max_z = np.max(z, axis=1, keepdims=True)
         exp_z = np.exp(z - max_z)
@@ -61,8 +44,9 @@ class LogRegression():
         
         # Initialize weights
         n_samples, n_features = X.shape
-        if self.solver != "lbfgs":
-            self.weight = np.zeros(n_features + 1)
+        
+        self.coef_ = np.zeros((n_features, self.n_classes_))
+        self.intercept_ = np.zeros(self.n_classes_)
         
         # Set random seed
         if self.random_state is not None:
@@ -230,21 +214,9 @@ class LogRegression():
         )
         
         # Extract optimized parameters
-        self.coef_ = res.x[:n_features * n_classes].reshape(n_features, n_classes).T
+        self.coef_ = res.x[:n_features * n_classes].reshape(n_features, n_classes)
         self.intercept_ = res.x[n_features * n_classes:]
         self.n_iter_ = res.nit
-
-    @property
-    def feature_importances_(self):
-        if self.coef_ is None:
-            raise ValueError("Model must be fitted before accessing feature importances")
-        
-        importances = np.linalg.norm(self.coef_, axis=1)
-        
-        if importances.sum() > 0:
-            importances = importances / importances.sum()
-        
-        return importances
     
     def _compute_class_weights(self, y_encoded):
         if self.class_weight is None:
@@ -294,7 +266,7 @@ class LogRegression():
         if X.ndim == 1:
             X = X.reshape(1, -1)
         
-        Z = X @ self.coef_.T + self.intercept_
+        Z = X @ self.coef_ + self.intercept_
         
         if self.n_classes_ == 2:
             probs_1 = self._sigmoid(Z[:, 1] - Z[:, 0]).reshape(-1, 1)
@@ -312,6 +284,12 @@ class LogRegression():
             predictions = np.array([self.inverse_label_mapping_[p] for p in predictions])
         
         return predictions
+
+    def _sigmoid(self, z):
+        z = np.clip(z, -500, 500)
+        return np.where(z >= 0, 
+                       1 / (1 + np.exp(-z)),
+                       np.exp(z) / (1 + np.exp(z)))
 
 class RFE:
     def __init__(self, estimator, n_features_to_select=None, step=1):
