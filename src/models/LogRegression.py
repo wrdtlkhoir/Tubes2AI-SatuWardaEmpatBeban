@@ -5,15 +5,15 @@ import random
 from scipy.optimize import minimize
 from scipy.special import logsumexp
 
-class LogisticRegression():
-    def __init__(self, C=1.0, max_iter=1000, random_state=None, solver='lbfgs', class_weight=None ):
+class LogRegression():
+    def __init__(self, C=1.0, max_iter=1000, learning_rate=0.1, random_state=None, solver='lbfgs', class_weight=None, tol=1e-4 ):
         self.C = C
         self.max_iter = max_iter
+        self.tol = tol
         self.random_state = random_state
         self.solver = solver
         self.class_weight = class_weight
-        self.threshold = 0.5
-        self.learning_rate = 0.5
+        self.learning_rate = learning_rate
         self.coef_ = None
         self.intercept_ = None
         self.classes_ = None
@@ -22,9 +22,6 @@ class LogisticRegression():
     def set_bias(self, value):
         self.bias = value
 
-    def set_threshold(self, value):
-        self.threshold = value
-    
     def set_learning_rate(self, value):
         self.learning_rate = value
    
@@ -83,8 +80,7 @@ class LogisticRegression():
         else:
             raise ValueError(f"Unknown solver: {self.solver}")
     
-    def get_regularization_strength(self):
-        n_samples = len(self.data)
+    def get_regularization_strength(self, n_samples):
         if n_samples == 0:
             return 0
         return 1.0 / (self.C * n_samples)
@@ -107,7 +103,7 @@ class LogisticRegression():
                 probs = self._sigmoid(Z[:, 1] - Z[:, 0]).reshape(-1, 1)
                 probs = np.hstack([1 - probs, probs])
             else:
-                probs = self._softmax(Z)
+                probs = self.softmax(Z)
             
             error = probs - Y_onehot
             weighted_error = error * self.sample_weights_[:, np.newaxis]
@@ -153,7 +149,7 @@ class LogisticRegression():
                     prob = self._sigmoid(z[0, 1] - z[0, 0])
                     probs = np.array([[1 - prob, prob]])
                 else:
-                    probs = self._softmax(z)
+                    probs = self.softmax(z)
                 
                 y_onehot = np.zeros((1, self.n_classes_))
                 y_onehot[0, y_i] = 1
@@ -250,6 +246,24 @@ class LogisticRegression():
         
         return importances
     
+    def _compute_class_weights(self, y_encoded):
+        if self.class_weight is None:
+            return np.ones(len(y_encoded))
+        elif self.class_weight == 'balanced':
+            unique_classes, class_counts = np.unique(y_encoded, return_counts=True)
+            n_samples = len(y_encoded)
+            n_classes = len(unique_classes)
+            
+            class_weight_dict = {}
+            for cls, count in zip(unique_classes, class_counts):
+                class_weight_dict[cls] = n_samples / (n_classes * count)
+            
+            return np.array([class_weight_dict[cls] for cls in y_encoded])
+        elif isinstance(self.class_weight, dict):
+            return np.array([self.class_weight.get(cls, 1.0) for cls in y_encoded])
+        else:
+            raise ValueError("class_weight must be None, 'balanced', or a dictionary")
+
     def get_params(self, deep=True):
         return {
             'solver': self.solver,
@@ -280,13 +294,13 @@ class LogisticRegression():
         if X.ndim == 1:
             X = X.reshape(1, -1)
         
-        Z = X @ self.coef_ + self.intercept_
+        Z = X @ self.coef_.T + self.intercept_
         
         if self.n_classes_ == 2:
             probs_1 = self._sigmoid(Z[:, 1] - Z[:, 0]).reshape(-1, 1)
             probs = np.hstack([1 - probs_1, probs_1])
         else:
-            probs = self._softmax(Z)
+            probs = self.softmax(Z)
         
         return probs
 
@@ -320,7 +334,7 @@ class RFE:
             X_subset = X[:, support]
             
             params = self.estimator.get_params()
-            model = LogisticRegression(**params)
+            model = LogRegression(**params)
             model.fit(X_subset, y)
             
             if model.coef_.ndim > 1:
