@@ -351,72 +351,55 @@ class LogRegression():
         z = np.clip(z, -500, 500)
         return np.where(z >= 0, 1 / (1 + np.exp(-z)), np.exp(z) / (1 + np.exp(z)))
     
-    def animate_logloss(self, X, y, save_path='logloss_animation.mp4', fps=10, param_indices=(0, 1)):
+    def animate_logloss(self, X, y, save_path='logloss_animation.gif', fps=10, param_indices=(0, 1)):
         if len(self.param_history_) == 0:
             raise ValueError("No training history found.")
         
         params = np.array(self.param_history_)
+        theta1_path = params[:, param_indices[0]]
+        theta2_path = params[:, param_indices[1]]
         
-        idx1, idx2 = param_indices
-        theta1_path = params[:, idx1]
-        theta2_path = params[:, idx2]
+        param1_name = f'θ_{param_indices[0]}'
+        param2_name = f'θ_{param_indices[1]}'
         
-        n_features = self.coef_.shape[0] if self.solver == 'lbfgs' else self.coef_.shape[1]
-        n_coefs = n_features * self.n_classes_
+        # 30x30 grid
+        theta1_range = theta1_path.max() - theta1_path.min()
+        theta2_range = theta2_path.max() - theta2_path.min()
+        theta1_min = theta1_path.min() - 0.2 * theta1_range
+        theta1_max = theta1_path.max() + 0.2 * theta1_range
+        theta2_min = theta2_path.min() - 0.2 * theta2_range
+        theta2_max = theta2_path.max() + 0.2 * theta2_range
         
-        if idx1 < n_coefs:
-            feat_idx1 = idx1 // self.n_classes_
-            class_idx1 = idx1 % self.n_classes_
-            param1_name = f'W[{feat_idx1},{class_idx1}]'
-        else:
-            param1_name = f'b[{idx1 - n_coefs}]'
-        
-        if idx2 < n_coefs:
-            feat_idx2 = idx2 // self.n_classes_
-            class_idx2 = idx2 % self.n_classes_
-            param2_name = f'W[{feat_idx2},{class_idx2}]'
-        else:
-            param2_name = f'b[{idx2 - n_coefs}]'
-        
-        theta1_min, theta1_max = theta1_path.min() - 0.5, theta1_path.max() + 0.5
-        theta2_min, theta2_max = theta2_path.min() - 0.5, theta2_path.max() + 0.5
-        
-        theta_grid_1 = np.linspace(theta1_min, theta1_max, 50)
-        theta_grid_2 = np.linspace(theta2_min, theta2_max, 50)
+        theta_grid_1 = np.linspace(theta1_min, theta1_max, 30)
+        theta_grid_2 = np.linspace(theta2_min, theta2_max, 30)
         Theta1, Theta2 = np.meshgrid(theta_grid_1, theta_grid_2)
         
+        # Compute loss surface
         Loss = np.zeros_like(Theta1)
         n_samples = len(X)
-        lambda_reg = self.get_regularization_strength(n_samples)
         
-        print(f"Computing loss for multinomial ({param1_name} vs {param2_name})...")
-        
-        # Get current parameters
-        if self.solver == 'lbfgs':
-            current_W = self.coef_.T.copy()
-        else:
-            current_W = self.coef_.copy()
+        current_W = self.coef_.T.copy() if self.solver == 'lbfgs' else self.coef_.copy()
         current_b = self.intercept_.copy()
+        n_features = current_W.shape[0]
+        n_coefs = n_features * self.n_classes_
         
-        for i in range(Theta1.shape[0]):
-            for j in range(Theta1.shape[1]):
+        for i in range(30):
+            for j in range(30):
                 temp_W = current_W.copy()
                 temp_b = current_b.copy()
                 
-                # Modify specific parameters
-                if idx1 < n_coefs:
-                    feat1 = idx1 // self.n_classes_
-                    cls1 = idx1 % self.n_classes_
-                    temp_W[feat1, cls1] = Theta1[i, j]
+                # Update parameters
+                if param_indices[0] < n_coefs:
+                    f1, c1 = param_indices[0] // self.n_classes_, param_indices[0] % self.n_classes_
+                    temp_W[f1, c1] = Theta1[i, j]
                 else:
-                    temp_b[idx1 - n_coefs] = Theta1[i, j]
+                    temp_b[param_indices[0] - n_coefs] = Theta1[i, j]
                 
-                if idx2 < n_coefs:
-                    feat2 = idx2 // self.n_classes_
-                    cls2 = idx2 % self.n_classes_
-                    temp_W[feat2, cls2] = Theta2[i, j]
+                if param_indices[1] < n_coefs:
+                    f2, c2 = param_indices[1] // self.n_classes_, param_indices[1] % self.n_classes_
+                    temp_W[f2, c2] = Theta2[i, j]
                 else:
-                    temp_b[idx2 - n_coefs] = Theta2[i, j]
+                    temp_b[param_indices[1] - n_coefs] = Theta2[i, j]
                 
                 # Compute loss
                 Z = X @ temp_W + temp_b
@@ -426,49 +409,30 @@ class LogRegression():
                 Y_onehot = np.zeros((n_samples, self.n_classes_))
                 Y_onehot[np.arange(n_samples), y] = 1
                 
-                loss = -np.mean(np.sum(Y_onehot * np.log(probs) * 
-                                        self.sample_weights_[:, np.newaxis], axis=1))
-                loss += 0.5 * lambda_reg * np.sum(temp_W**2)
-                
-                Loss[i, j] = loss
+                Loss[i, j] = -np.mean(np.sum(Y_onehot * np.log(probs), axis=1))
         
-        fig, ax = plt.subplots(figsize=(10, 8))
+        # Create figure
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.contour(Theta1, Theta2, Loss, levels=15, cmap='viridis')
+        ax.contourf(Theta1, Theta2, Loss, levels=15, cmap='viridis', alpha=0.3)
         
-        contour = ax.contour(Theta1, Theta2, Loss, levels=20, cmap='viridis', alpha=0.6)
-        ax.contourf(Theta1, Theta2, Loss, levels=20, cmap='viridis', alpha=0.3)
-        plt.colorbar(contour, ax=ax, label='Log-Loss')
+        line, = ax.plot([], [], 'r-', linewidth=2)
+        point, = ax.plot([], [], 'ro', markersize=8)
         
-        line, = ax.plot([], [], 'r-', linewidth=2, label='Parameter trajectory')
-        point, = ax.plot([], [], 'ro', markersize=10, label='Current position')
-        
-        ax.set_xlabel(param1_name, fontsize=12)
-        ax.set_ylabel(param2_name, fontsize=12)
-        ax.set_title('Log-Loss Contours and Parameter Trajectory', fontsize=14)
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+        ax.set_xlabel(param1_name)
+        ax.set_ylabel(param2_name)
+        ax.set_title('Loss Landscape and Training Path')
         
         def animate(frame):
             line.set_data(theta1_path[:frame+1], theta2_path[:frame+1])
             point.set_data([theta1_path[frame]], [theta2_path[frame]])
-            
-            if frame < len(self.loss_history_):
-                ax.set_title(f'Iteration {frame}, Loss: {self.loss_history_[frame]:.4f}', 
-                            fontsize=14)
-            
             return line, point
         
-        anim = animation.FuncAnimation(
-            fig, animate, frames=len(theta1_path),
-            interval=1000/fps, blit=True, repeat=True
-        )
+        anim = animation.FuncAnimation(fig, animate, frames=len(theta1_path), interval=1000//fps, blit=True)
         
-        print(f"Saving animation to {save_path}")
-        Writer = animation.writers['ffmpeg']
-        writer = Writer(fps=fps, metadata=dict(artist='LogRegression'), bitrate=1800)
-        anim.save(save_path, writer=writer)
-        
+        print(f"Saving to {save_path}...")
+        anim.save(save_path, writer='pillow', fps=fps)
         plt.close()
-        print(f"Animation saved on {save_path}")
         
         return anim
     
