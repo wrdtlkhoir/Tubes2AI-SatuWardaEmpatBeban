@@ -50,7 +50,7 @@ class C45DecisionTree:
         self.classes = np.unique(y)
         self.classes_ = self.classes
         self.sample_weights = self._compute_sample_weights(y)
-        self.tree = self.build_tree(X, y, depth=0)
+        self.tree = self.build_tree(X, y, depth=0, weights=self.sample_weights)
         self.feature_importances_ = self._compute_feature_importance(X, y)
         return self
 
@@ -95,7 +95,7 @@ class C45DecisionTree:
         except:
             return False
     
-    def entropy(self, y):
+    def entropy(self, y, weights=None):
         if weights is None:
             weights = np.ones(len(y))
             
@@ -115,7 +115,7 @@ class C45DecisionTree:
         
         return entropy_val
     
-    def information_gain(self, X, y, feature_idx, threshold=None):
+    def information_gain(self, X, y, feature_idx, threshold=None, weights=None):
         if weights is None:
             weights = np.ones(len(y))
             
@@ -254,7 +254,7 @@ class C45DecisionTree:
         
         return best_feature, best_threshold
     
-    def majority_class(self, y):
+    def majority_class(self, y, weights=None):
         if weights is None:
             return np.bincount(y).argmax()
         
@@ -267,7 +267,7 @@ class C45DecisionTree:
         
         return unique_classes[np.argmax(class_weights)]
     
-    def build_tree(self, X, y, depth):
+    def build_tree(self, X, y, depth, weights=None):
         if weights is None:
             weights = np.ones(len(y))
             if self.sample_weights is not None and len(self.sample_weights) >= len(y):
