@@ -132,7 +132,7 @@ class DAGSVM:
     def predict(self, X):
         X = np.asarray(X, dtype=float)
         n = X.shape[0]
-        preds = np.empty(n, dtype=object)
+        preds = []
 
         k = len(self.classes)
         for idx in range(n):
@@ -153,8 +153,8 @@ class DAGSVM:
                     score = clf.decision_function(x)[0]
                     if score < 0:
                         winner_idx = challenger_idx
-            preds[idx] = self.classes[winner_idx]
-        return preds
+            preds.append(self.classes[winner_idx])
+        return np.array(preds, dtype=self.classes.dtype)
 
 
 def hinge_grad_step(w, b, X_batch, y_batch, C):
