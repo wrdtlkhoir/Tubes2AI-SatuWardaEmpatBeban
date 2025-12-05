@@ -478,7 +478,7 @@ class C45DecisionTree:
                     'class_weight': self.class_weight
                 }
             }, f)
-        print(f"✓ Model saved to: {filepath}")
+        print(f"Model saved to: {filepath}")
     
     def load_model(self, filepath):
         with open(filepath, 'rb') as f:
@@ -494,7 +494,7 @@ class C45DecisionTree:
         self.criterion = params.get('criterion', 'entropy')
         self.random_state = params.get('random_state', None)
         self.class_weight = params.get('class_weight', None)
-        print(f"✓ Model loaded from: {filepath}")
+        print(f"Model loaded from: {filepath}")
         return self
 
     def get_params(self, deep=True):
@@ -530,7 +530,7 @@ class C45DecisionTree:
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path, dpi=150, bbox_inches='tight')
-            print(f"✓ Tree saved to: {save_path}")
+            print(f"Tree saved to: {save_path}")
         plt.show()
     
     def calc_positions(self, node, depth, left, right, positions, max_depth):

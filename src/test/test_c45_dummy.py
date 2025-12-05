@@ -88,8 +88,8 @@ for feature_idx, feature_name in enumerate(X_train.columns):
                 best_gain = gain
                 best_threshold = threshold
         
-        print(f"\n  ✓ Best threshold: C = {best_threshold:.2f}")
-        print(f"  ✓ Best gain: {best_gain:.4f}")
+        print(f"\n  Best threshold: C = {best_threshold:.2f}")
+        print(f"  Best gain: {best_gain:.4f}")
         
         left_mask = X_values[:, feature_idx] <= best_threshold
         left_mask = left_mask & ~pd.isna(X_values[:, feature_idx])
@@ -118,7 +118,7 @@ for feature_idx, feature_name in enumerate(X_train.columns):
             n_class1 = sum(y_train[mask] == 1)
             print(f"  {feature_name} = {value}: {n_samples} samples → Class 0={n_class0}, Class 1={n_class1}")
         
-        print(f"\n  ✓ Gain: {gain:.4f}")
+        print(f"\n  Gain: {gain:.4f}")
         gains.append((feature_name, gain, "categorical"))
 
 print("\n" + "=" * 80)
@@ -132,7 +132,7 @@ print("-" * 80)
 for i, (attr, gain, details) in enumerate(gains, 1):
     print(f"{i:<6} {attr:<15} {gain:<12.4f} {details}")
 
-print(f"\n✓ BEST ATTRIBUTE TO SPLIT: {gains[0][0]} (Gain = {gains[0][1]:.4f})")
+print(f"\nBEST ATTRIBUTE TO SPLIT: {gains[0][0]} (Gain = {gains[0][1]:.4f})")
 
 print("\n" + "=" * 80)
 print("BUILDING TREE WITH SELECTED ATTRIBUTE")
@@ -146,11 +146,11 @@ model.print_tree()
 
 train_pred = model.predict(X_train)
 train_acc = (train_pred == y_train).mean()
-print(f"\n✓ Train Accuracy: {train_acc:.2%}")
+print(f"\nTrain Accuracy: {train_acc:.2%}")
 
 print("\n" + "=" * 80)
 print("SAVING VISUALIZATION")
 print("=" * 80)
 
 model.visualize_tree(max_depth=3, save_path='e:/SEMESTER_5/AI/Tubes2AI-SatuWardaEmpatBeban/src/models/tree_dummy.png')
-print("\n✓ Visualization saved to: src/models/tree_dummy.png")
+print("\nVisualization saved to: src/models/tree_dummy.png")

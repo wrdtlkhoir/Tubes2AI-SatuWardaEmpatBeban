@@ -141,7 +141,7 @@ def train_model_with_configs(X_train, y_train, X_val, y_val):
         elif overfitting < -0.05:
             print(f"⚠️  Warning: Possible underfitting")
         else:
-            print(f"✓ Good generalization (gap: {overfitting:.4f})")
+            print(f"Good generalization (gap: {overfitting:.4f})")
         
         results.append({
             'Configuration': config['name'],
@@ -167,7 +167,7 @@ def train_model_with_configs(X_train, y_train, X_val, y_val):
     
     # Find best model
     best_model_info = max(models, key=lambda x: x['val_acc'])
-    print(f"\n✓ Best model: {best_model_info['name']}")
+    print(f"\nBest model: {best_model_info['name']}")
     print(f"  Validation Accuracy: {best_model_info['val_acc']:.4f}")
     
     return best_model_info['model'], models
@@ -206,7 +206,7 @@ def evaluate_model(model, X_train, y_train, X_val, y_val):
     plt.xlabel('Predicted Label', fontsize=12)
     plt.tight_layout()
     plt.savefig('confusion_matrix.png', dpi=300, bbox_inches='tight')
-    print("\n✓ Confusion matrix saved as 'confusion_matrix.png'")
+    print("\nConfusion matrix saved as 'confusion_matrix.png'")
     
     # Per-class accuracy
     print("\nPer-Class Accuracy:")
@@ -254,7 +254,7 @@ def visualize_tree(model, max_depth=3):
         figsize=(25, 15),
         dpi=150
     )
-    print(f"✓ Tree visualization saved as 'student_dropout_tree_top{max_depth}.png'")
+    print(f"Tree visualization saved as 'student_dropout_tree_top{max_depth}.png'")
     
     # Text representation
     print(f"\nTree Structure (Text - Top {max_depth} Levels):")
@@ -270,13 +270,13 @@ def save_model(model, filename='student_dropout_c45_model.pkl'):
     print("="*70)
     
     model.save_model(filename)
-    print(f"\n✓ Model saved successfully!")
+    print(f"\nModel saved successfully!")
     
     # Verify by loading
     print("\nVerifying saved model...")
     loaded_model = C45DecisionTree()
     loaded_model.load_model(filename)
-    print("✓ Model loaded successfully!")
+    print("Model loaded successfully!")
     
     return filename
 
@@ -326,7 +326,7 @@ def predict_test_set(model, test_csv_path='../data/test.csv'):
     # Save submission
     submission_file = 'submission_c45.csv'
     submission.to_csv(submission_file, index=False)
-    print(f"\n✓ Predictions saved to: {submission_file}")
+    print(f"\nPredictions saved to: {submission_file}")
     
     # Show prediction distribution
     print("\nPrediction distribution:")
@@ -377,7 +377,7 @@ def main():
     
     # Training
     model.fit(X_train, y_train)
-    print("✓ Model trained!")
+    print("Model trained!")
     print(f"Tree depth: {model.get_depth()}")
     print(f"Number of leaves: {model.get_n_leaves()}")
     
