@@ -50,7 +50,7 @@ class C45DecisionTree:
         self.classes = np.unique(y)
         self.classes_ = self.classes
         self.sample_weights = self._compute_sample_weights(y)
-        self.tree = self.build_tree(X, y, depth=0)
+        self.tree = self.build_tree(X, y, depth=0, weights=self.sample_weights)
         self.feature_importances_ = self._compute_feature_importance(X, y)
         return self
 
@@ -95,7 +95,7 @@ class C45DecisionTree:
         except:
             return False
     
-    def entropy(self, y):
+    def entropy(self, y, weights=None):
         if weights is None:
             weights = np.ones(len(y))
             
@@ -115,7 +115,7 @@ class C45DecisionTree:
         
         return entropy_val
     
-    def information_gain(self, X, y, feature_idx, threshold=None):
+    def information_gain(self, X, y, feature_idx, threshold=None, weights=None):
         if weights is None:
             weights = np.ones(len(y))
             
@@ -254,7 +254,7 @@ class C45DecisionTree:
         
         return best_feature, best_threshold
     
-    def majority_class(self, y):
+    def majority_class(self, y, weights=None):
         if weights is None:
             return np.bincount(y).argmax()
         
@@ -267,7 +267,7 @@ class C45DecisionTree:
         
         return unique_classes[np.argmax(class_weights)]
     
-    def build_tree(self, X, y, depth):
+    def build_tree(self, X, y, depth, weights=None):
         if weights is None:
             weights = np.ones(len(y))
             if self.sample_weights is not None and len(self.sample_weights) >= len(y):
@@ -478,7 +478,7 @@ class C45DecisionTree:
                     'class_weight': self.class_weight
                 }
             }, f)
-        print(f"✓ Model saved to: {filepath}")
+        print(f"Model saved to: {filepath}")
     
     def load_model(self, filepath):
         with open(filepath, 'rb') as f:
@@ -494,7 +494,7 @@ class C45DecisionTree:
         self.criterion = params.get('criterion', 'entropy')
         self.random_state = params.get('random_state', None)
         self.class_weight = params.get('class_weight', None)
-        print(f"✓ Model loaded from: {filepath}")
+        print(f"Model loaded from: {filepath}")
         return self
 
     def get_params(self, deep=True):
@@ -530,7 +530,7 @@ class C45DecisionTree:
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path, dpi=150, bbox_inches='tight')
-            print(f"✓ Tree saved to: {save_path}")
+            print(f"Tree saved to: {save_path}")
         plt.show()
     
     def calc_positions(self, node, depth, left, right, positions, max_depth):

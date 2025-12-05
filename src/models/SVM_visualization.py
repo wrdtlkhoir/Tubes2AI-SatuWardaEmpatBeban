@@ -75,14 +75,17 @@ def training_visualization_callback(model, epoch, X, y):
         )
 
         plt.tight_layout()
-        plt.savefig(f"../test/frames/training_{epoch:04d}.png", dpi=80)
+        # Use absolute path from current working directory
+        frames_dir = os.path.join(os.getcwd(), "test", "frames")
+        os.makedirs(frames_dir, exist_ok=True)
+        plt.savefig(os.path.join(frames_dir, f"training_{epoch:04d}.png"), dpi=80)
         plt.close()
 
 
 def create_training_animation(
-    output_path="../test/output/svm_training_progress.gif",
+    output_path="saved_models/svm_training_progress.gif",
     fps=2,
-    frames_dir="../test/frames",
+    frames_dir="test/frames",
 ):
     if not os.path.exists(frames_dir):
         return 0
