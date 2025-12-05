@@ -88,7 +88,7 @@ Pembagian tugas (Kelompok 24)
 | No | Nama | NIM | Tugas / Peran |
 |----|------|-----|---------------|
 | 1  | Wardatul Khoiroh | 13523001 | Implementasi C4.5 (scratch) + bonusnya, laporan |
-| 2  | Raka Dafa | 13523018 | Implementasi SVM + bonusnya, laporan |
-| 3  | M Fithra | 13523049 | Data Cleaning dan Preprocessing (notebook), laporan |
+| 2  | Raka Daffa Iftikhaar | 13523018 | Implementasi SVM + bonusnya, laporan |
+| 3  | Muhammad Fithra Rizki | 13523049 | Data Cleaning dan Preprocessing (notebook), laporan |
 | 4  | Ahsan Malik Al Farisi | 13523074 | Implementasi Logreg + bonusnya, laporan |
 | 5  | Farrel Athalla Putra | 13523118 | Data Cleaning dan Preprocessing (notebook), laporan |
